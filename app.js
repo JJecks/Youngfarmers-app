@@ -170,11 +170,12 @@ async function handleGoogleSignin() {
     
     const userDoc = await getDoc(doc(db, 'users', user.uid));
     if (!userDoc.exists()) {
-      await createUserDocument(user.uid, user.email, user.displayName);
+      await createUserDocument(user.uid, user.email, user.displayName || 'User');
       showToast('Account created! Waiting for admin approval.');
-      signOut(auth);
+      await signOut(auth);
     }
   } catch (error) {
+    console.error('Google sign-in error:', error);
     document.getElementById('auth-error').textContent = error.message;
   }
 }
