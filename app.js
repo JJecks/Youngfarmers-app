@@ -1,13 +1,5 @@
 import { auth, db } from './firebase-config.js';
 import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signInWithPopup,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signOut 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { 
   doc, 
   setDoc, 
   getDoc, 
@@ -193,18 +185,16 @@ async function handleGoogleSignin() {
 
 async function createUserDocument(uid, email, name) {
   console.log('=== CREATE USER DOCUMENT START ===');
-  console.log('UID:', uid);
-  console.log('Email:', email);
-  console.log('Name:', name);
   
   const isAdmin = email === ADMIN_EMAIL;
-  console.log('Is Admin?', isAdmin);
   
   try {
-    const userDocRef = doc(db, 'users', uid);
-    console.log('Document reference created');
+    // Try using collection + addDoc instead
+    const usersRef = collection(db, 'users');
+    console.log('Collection reference created');
     
     const userData = {
+      uid: uid,
       email: email,
       name: name,
       role: isAdmin ? 'manager_full' : 'pending',
@@ -212,24 +202,19 @@ async function createUserDocument(uid, email, name) {
       status: isAdmin ? 'active' : 'pending',
       createdAt: Timestamp.now()
     };
-    console.log('User data prepared:', userData);
     
-    console.log('Calling setDoc...');
-    const result = await Promise.race([
-      setDoc(userDocRef, userData),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout after 10 seconds')), 10000))
-    ]);
-    console.log('SetDoc result:', result);
+    console.log('Adding document with addDoc...');
+    const docRef = await addDoc(usersRef, userData);
+    console.log('✅ Document added with ID:', docRef.id);
+    
+    // Now set the proper document ID
+    console.log('Updating document ID to match UID...');
+    await deleteDoc(docRef);
+    await setDoc(doc(db, 'users', uid), userData);
     console.log('✅ User document created successfully!');
-    return true;
     
   } catch (error) {
-    console.error('❌ ERROR creating user document:', error);
-    console.error('Error type:', typeof error);
-    console.error('Error name:', error.name);
-    console.error('Error code:', error.code);
-    console.error('Error message:', error.message);
-    console.error('Full error:', JSON.stringify(error, null, 2));
+    console.error('❌ ERROR:', error);
     throw error;
   }
 }
