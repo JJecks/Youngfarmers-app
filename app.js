@@ -164,32 +164,65 @@ async function handleAuthSubmit(e) {
 
 async function handleGoogleSignin() {
   const provider = new GoogleAuthProvider();
+  console.log('=== GOOGLE SIGN-IN START ===');
+  
   try {
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
+    console.log('Google auth successful, UID:', user.uid);
     
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    const userDocRef = doc(db, 'users', user.uid);
+    const userDoc = await getDoc(userDocRef);
+    console.log('User doc exists?', userDoc.exists());
+    
     if (!userDoc.exists()) {
+      console.log('Creating new user document...');
       await createUserDocument(user.uid, user.email, user.displayName || 'User');
       showToast('Account created! Waiting for admin approval.');
       await signOut(auth);
+    } else {
+      console.log('User already exists, signing in...');
     }
   } catch (error) {
-    console.error('Google sign-in error:', error);
+    console.error('❌ Google sign-in error:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
     document.getElementById('auth-error').textContent = error.message;
   }
 }
 
 async function createUserDocument(uid, email, name) {
+  console.log('=== CREATE USER DOCUMENT START ===');
+  console.log('UID:', uid);
+  console.log('Email:', email);
+  console.log('Name:', name);
+  
   const isAdmin = email === ADMIN_EMAIL;
-  await setDoc(doc(db, 'users', uid), {
-    email: email,
-    name: name,
-    role: isAdmin ? 'manager_full' : 'pending',
-    shop: null,
-    status: isAdmin ? 'active' : 'pending',
-    createdAt: Timestamp.now()
-  });
+  console.log('Is Admin?', isAdmin);
+  
+  try {
+    const userDocRef = doc(db, 'users', uid);
+    console.log('Document reference created');
+    
+    const userData = {
+      email: email,
+      name: name,
+      role: isAdmin ? 'manager_full' : 'pending',
+      shop: null,
+      status: isAdmin ? 'active' : 'pending',
+      createdAt: Timestamp.now()
+    };
+    console.log('User data prepared:', userData);
+    
+    await setDoc(userDocRef, userData);
+    console.log('✅ User document created successfully!');
+    
+  } catch (error) {
+    console.error('❌ ERROR creating user document:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    throw error;
+  }
 }
 
 async function loadUserData() {
