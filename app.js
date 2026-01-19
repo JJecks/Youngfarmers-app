@@ -214,16 +214,26 @@ async function createUserDocument(uid, email, name) {
     };
     console.log('User data prepared:', userData);
     
-    await setDoc(userDocRef, userData);
+    console.log('Calling setDoc...');
+    const result = await Promise.race([
+      setDoc(userDocRef, userData),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout after 10 seconds')), 10000))
+    ]);
+    console.log('SetDoc result:', result);
     console.log('✅ User document created successfully!');
+    return true;
     
   } catch (error) {
     console.error('❌ ERROR creating user document:', error);
+    console.error('Error type:', typeof error);
+    console.error('Error name:', error.name);
     console.error('Error code:', error.code);
     console.error('Error message:', error.message);
+    console.error('Full error:', JSON.stringify(error, null, 2));
     throw error;
   }
 }
+
 
 async function loadUserData() {
   const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
