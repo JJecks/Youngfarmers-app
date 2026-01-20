@@ -77,10 +77,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
 function showSplashScreen() {
   const splash = document.getElementById('splash-screen');
-  splash.classList.add('active');
-  setTimeout(() => {
-    splash.classList.remove('active');
-  }, 2500);
+  if (splash) {
+    splash.classList.add('active');
+    setTimeout(() => {
+      splash.classList.remove('active');
+    }, 2500);
+  }
 }
 
 function hideSplashScreen() {
