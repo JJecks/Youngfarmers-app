@@ -374,14 +374,29 @@ async function renderOtherShopStock(shopId, date) {
   return html;
 }
 
+// REPLACE the renderAttendantView() function in app.js Part 2 with this updated version
+
 function renderAttendantView(shopId, date, stockData) {
+  // Check if this is the very first entry for this shop on this date
+  // First entry = no opening stock AND no transactions recorded yet
+  const isFirstEntry = Object.keys(stockData.openingStock).length === 0 || 
+                       Object.values(stockData.openingStock).every(val => val === 0);
+  
   let html = '<div class="summary-card">';
   html += '<h2>Closing Stock (Auto-Calculated)</h2>';
-  html += '<p style="color: #666; margin-bottom: 15px;">Record all transactions below. Closing stock updates automatically.</p>';
+  
+  if (isFirstEntry) {
+    html += '<p style="color: #ff9800; font-weight: bold; margin-bottom: 15px;">⚠️ First time setup: Please enter your Opening Stock quantities below.</p>';
+  } else {
+    html += '<p style="color: #666; margin-bottom: 15px;">Record all transactions below. Closing stock updates automatically.</p>';
+  }
+  
   html += '<table><thead><tr>';
   html += '<th>#</th><th>Feed Name</th><th>Opening Stock</th><th>Restocking</th><th>Closing Stock</th><th>Bags Sold</th><th>Selling Price</th>';
   html += '</tr></thead><tbody>';
   
+  let totalOpening = 0;
+  let totalRestocking = 0;
   let totalClosing = 0;
   
   PRODUCTS.forEach((product, index) => {
@@ -392,12 +407,22 @@ function renderAttendantView(shopId, date, stockData) {
     const creditorReleases = stockData.creditorReleases[product.id] || 0;
     
     const closing = opening + restocking - sales - transfersOut - creditorReleases;
+    
+    totalOpening += opening;
+    totalRestocking += restocking;
     totalClosing += closing;
     
     html += `<tr>`;
     html += `<td>${index + 1}</td>`;
     html += `<td>${product.name}</td>`;
-    html += `<td>${opening}</td>`;
+    
+    // Opening Stock - editable only on first entry
+    if (isFirstEntry) {
+      html += `<td><input type="number" class="opening-stock-input" data-product="${product.id}" value="${opening}" min="0" style="width: 80px; padding: 5px;"></td>`;
+    } else {
+      html += `<td>${opening}</td>`;
+    }
+    
     html += `<td>${restocking}</td>`;
     html += `<td><strong>${closing}</strong></td>`;
     html += `<td>${sales}</td>`;
@@ -405,8 +430,18 @@ function renderAttendantView(shopId, date, stockData) {
     html += `</tr>`;
   });
   
-  html += `<tr><td colspan="4"><strong>TOTAL</strong></td><td><strong>${totalClosing}</strong></td><td colspan="2"></td></tr>`;
+  html += `<tr><td colspan="2"><strong>TOTAL</strong></td>`;
+  html += `<td><strong id="total-opening">${totalOpening}</strong></td>`;
+  html += `<td><strong id="total-restocking">${totalRestocking}</strong></td>`;
+  html += `<td><strong>${totalClosing}</strong></td><td colspan="2"></td></tr>`;
   html += '</tbody></table>';
+  
+  // Save Opening Stock button (only show on first entry)
+  if (isFirstEntry) {
+    html += '<button type="button" class="add-btn" id="save-opening-stock" style="margin-right: 10px;">Save Opening Stock</button>';
+    html += '<p style="color: #666; margin-top: 10px; font-size: 14px;">💡 After saving opening stock, you can start recording transactions below.</p>';
+  }
+  
   html += '<button type="button" class="add-btn" id="copy-closing-stock" style="margin-top: 15px;">Copy Closing Stock to Clipboard</button>';
   html += '</div>';
   
@@ -590,6 +625,14 @@ function renderRecordedTransactions(stockData) {
 // Paste Part 4 directly after this
 
 function setupAttendantFormListeners(shopId, date) {
+  // Add opening stock save button listener
+  document.getElementById('save-opening-stock')?.addEventListener('click', () => saveOpeningStock(shopId, date));
+  
+  // Add change listeners to opening stock inputs
+  document.querySelectorAll('.opening-stock-input').forEach(input => {
+    input.addEventListener('input', updateOpeningStockTotals);
+  });
+  
   // Copy closing stock button
   document.getElementById('copy-closing-stock')?.addEventListener('click', () => copyClosingStockToClipboard(shopId, date));
   
@@ -928,6 +971,68 @@ function clearDebtPaymentForm() {
   document.getElementById('debt-debtor-name').value = '';
   document.getElementById('debt-amount').value = '';
   document.getElementById('debt-method').value = '';
+}
+// Save opening stock for first-time setup
+async function saveOpeningStock(shopId, date) {
+  const openingStockInputs = document.querySelectorAll('.opening-stock-input');
+  
+  if (openingStockInputs.length === 0) {
+    showToast('No opening stock inputs found');
+    return;
+  }
+  
+  const openingStockData = {};
+  let hasValues = false;
+  
+  openingStockInputs.forEach(input => {
+    const productId = input.dataset.product;
+    const value = parseFloat(input.value) || 0;
+    openingStockData[productId] = value;
+    if (value > 0) hasValues = true;
+  });
+  
+  if (!hasValues) {
+    showToast('Please enter at least one opening stock quantity');
+    return;
+  }
+  
+  try {
+    // Save opening stock to Firestore
+    const docRef = doc(db, 'shops', shopId, 'daily', date);
+    await setDoc(docRef, {
+      openingStock: openingStockData,
+      restocking: {},
+      sales: {},
+      transfersOut: {},
+      creditorReleases: {},
+      createdAt: Timestamp.now(),
+      createdBy: currentUser.uid
+    });
+    
+    showToast('Opening stock saved successfully! You can now record transactions.');
+    
+    // Reload the shop data to show updated view
+    loadShopData(shopId, date);
+  } catch (error) {
+    console.error('Error saving opening stock:', error);
+    showToast('Error saving opening stock: ' + error.message);
+  }
+}
+
+// Update opening stock totals in real-time
+function updateOpeningStockTotals() {
+  const openingStockInputs = document.querySelectorAll('.opening-stock-input');
+  let total = 0;
+  
+  openingStockInputs.forEach(input => {
+    const value = parseFloat(input.value) || 0;
+    total += value;
+  });
+  
+  const totalEl = document.getElementById('total-opening');
+  if (totalEl) {
+    totalEl.textContent = total;
+  }
 }
 
 // Get shop stock data
