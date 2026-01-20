@@ -447,6 +447,7 @@ function renderAttendantView(shopId, date, stockData) {
   
   // Transaction forms
   html += renderRecordSaleForm();
+  html += renderRestockingForm();
   html += renderTransfersInForm();
   html += renderTransfersOutForm();
   html += renderFeedsReleasedForm(stockData.creditors || []);
@@ -474,6 +475,21 @@ function renderRecordSaleForm() {
   html += '</div>';
   html += '<button type="button" class="add-btn" id="save-sale">Save Sale</button>';
   html += '<button type="button" class="add-btn secondary-btn" id="add-new-sale">Add New Entry</button>';
+  html += '</div>';
+  return html;
+}
+function renderRestockingForm() {
+  let html = '<div class="form-section">';
+  html += '<h3 class="section-title">Record Restocking (Feeds Received from Supplier)</h3>';
+  html += '<div class="form-row">';
+  html += '<select id="restock-feed" required><option value="">Select Feed Type</option>';
+  PRODUCTS.forEach(p => html += `<option value="${p.id}">${p.name}</option>`);
+  html += '</select>';
+  html += '<input type="number" id="restock-bags" placeholder="Number of Bags" min="0.1" step="0.1" required>';
+  html += '<input type="text" id="restock-supplier" placeholder="Supplier Name (Optional)">';
+  html += '</div>';
+  html += '<button type="button" class="add-btn" id="save-restocking">Save</button>';
+  html += '<button type="button" class="add-btn secondary-btn" id="add-new-restocking">Add New Entry</button>';
   html += '</div>';
   return html;
 }
@@ -646,6 +662,11 @@ function setupAttendantFormListeners(shopId, date) {
   
   document.getElementById('save-sale')?.addEventListener('click', () => saveRegularSale(shopId, date));
   document.getElementById('add-new-sale')?.addEventListener('click', clearRegularSaleForm);
+
+  // Restocking form
+  document.getElementById('save-restocking')?.addEventListener('click', () => saveRestocking(shopId, date));
+  document.getElementById('add-new-restocking')?.addEventListener('click', clearRestockingForm);
+
   
   // Transfer in form
   document.getElementById('save-transfer-in')?.addEventListener('click', () => saveTransferIn(shopId, date));
@@ -755,6 +776,42 @@ function clearRegularSaleForm() {
   document.getElementById('sale-bags').value = '';
   document.getElementById('sale-price').value = '';
   document.getElementById('sale-discount').value = '0';
+}
+
+// Save restocking
+async function saveRestocking(shopId, date) {
+  const feedId = document.getElementById('restock-feed').value;
+  const bags = parseFloat(document.getElementById('restock-bags').value);
+  const supplier = document.getElementById('restock-supplier').value || 'Supplier';
+  
+  if (!feedId || !bags) {
+    showToast('Please fill all required fields');
+    return;
+  }
+  
+  const product = PRODUCTS.find(p => p.id === feedId);
+  
+  try {
+    await addDoc(collection(db, 'shops', shopId, 'daily', date, 'restocking'), {
+      feed: feedId,
+      feedName: product.name,
+      bags: bags,
+      supplier: supplier,
+      createdAt: Timestamp.now()
+    });
+    
+    showToast('Restocking recorded!');
+    clearRestockingForm();
+    loadShopData(shopId, date);
+  } catch (error) {
+    showToast('Error: ' + error.message);
+  }
+}
+
+function clearRestockingForm() {
+  document.getElementById('restock-feed').value = '';
+  document.getElementById('restock-bags').value = '';
+  document.getElementById('restock-supplier').value = '';
 }
 
 // Save transfer in
@@ -1106,6 +1163,13 @@ async function getShopStock(shopId, date) {
     data.restocking[transferData.feed] = (data.restocking[transferData.feed] || 0) + transferData.bags;
   });
   
+  // Restocking from suppliers
+  const restockingSnap = await getDocs(collection(db, 'shops', shopId, 'daily', date, 'restocking'));
+  restockingSnap.forEach(doc => {
+    const restockData = doc.data();
+    data.restocking[restockData.feed] = (data.restocking[restockData.feed] || 0) + restockData.bags;
+  });
+
   // Transfers out
   const transfersOutSnap = await getDocs(collection(db, 'shops', shopId, 'daily', date, 'transfersOut'));
   transfersOutSnap.forEach(doc => {
