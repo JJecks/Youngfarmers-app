@@ -72,11 +72,11 @@ window.addEventListener('DOMContentLoaded', () => {
         signOut(auth);
       }
     } else {
-      hideSplashScreen();
+      currentUser = null;
+      currentUserData = null;
       showAuthScreen();
     }
   });
-});
 
 // Splash screen
 function showSplashScreen() {
@@ -217,10 +217,19 @@ async function createUserDocument(uid, email, name) {
 }
 
 async function loadUserData() {
-  const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-  if (userDoc.exists()) {
-    currentUserData = userDoc.data();
-    updateUIForRole();
+  try {
+    const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+    if (userDoc.exists()) {
+      currentUserData = userDoc.data();
+      console.log('User data loaded:', currentUserData); // Debug log
+      updateUIForRole();
+    } else {
+      console.log('User document does not exist');
+      currentUserData = null;
+    }
+  } catch (error) {
+    console.error('Error loading user data:', error);
+    currentUserData = null;
   }
 }
 
