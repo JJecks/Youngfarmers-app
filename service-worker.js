@@ -1,4 +1,6 @@
-const CACHE_NAME = 'yfarmers-v1';
+// service-worker.js - Young Farmers PWA Service Worker
+
+const CACHE_NAME = 'young-farmers-v1';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -8,17 +10,23 @@ const urlsToCache = [
   '/manifest.json'
 ];
 
+// Install event
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+      .then(cache => {
+        console.log('Opened cache');
+        return cache.addAll(urlsToCache);
+      })
   );
 });
 
+// Fetch event
 self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request)
       .then(response => {
+        // Cache hit - return response
         if (response) {
           return response;
         }
@@ -28,6 +36,7 @@ self.addEventListener('fetch', event => {
   );
 });
 
+// Activate event
 self.addEventListener('activate', event => {
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
