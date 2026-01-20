@@ -238,13 +238,24 @@ function updateUIForRole() {
 }
 
 function setupNavigationListeners() {
-  document.getElementById('logout-btn').addEventListener('click', () => {
-    signOut(auth);
-  });
+  const logoutBtn = document.getElementById('logout-btn');
+  const backBtn = document.getElementById('back-btn');
+  const totalSalesBtn = document.getElementById('total-sales-btn');
+  const debtorsBtn = document.getElementById('debtors-btn');
+  const creditorsBtn = document.getElementById('creditors-btn');
+  const stockValueBtn = document.getElementById('stock-value-btn');
+  const productsBtn = document.getElementById('products-btn');
+  const allClientsBtn = document.getElementById('all-clients-btn');
+  const adminPanelBtn = document.getElementById('admin-panel-btn');
+  const shopDate = document.getElementById('shop-date');
+  const salesDate = document.getElementById('sales-date');
+  const clientsShopFilter = document.getElementById('clients-shop-filter');
+  const clientsDateFilter = document.getElementById('clients-date-filter');
+  const exportDoc1 = document.getElementById('export-doc1');
+  const exportDoc2 = document.getElementById('export-doc2');
   
-  document.getElementById('back-btn').addEventListener('click', () => {
-    showDashboard();
-  });
+  if (logoutBtn) logoutBtn.addEventListener('click', () => signOut(auth));
+  if (backBtn) backBtn.addEventListener('click', () => showDashboard());
   
   document.querySelectorAll('.shop-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -253,29 +264,29 @@ function setupNavigationListeners() {
     });
   });
   
-  document.getElementById('total-sales-btn').addEventListener('click', showTotalSalesView);
-  document.getElementById('debtors-btn').addEventListener('click', showDebtorsView);
-  document.getElementById('creditors-btn').addEventListener('click', showCreditorsView);
-  document.getElementById('stock-value-btn').addEventListener('click', showStockValueView);
-  document.getElementById('products-btn').addEventListener('click', showProductsView);
-  document.getElementById('all-clients-btn').addEventListener('click', showAllClientsView);
-  document.getElementById('admin-panel-btn').addEventListener('click', showAdminPanel);
+  if (totalSalesBtn) totalSalesBtn.addEventListener('click', showTotalSalesView);
+  if (debtorsBtn) debtorsBtn.addEventListener('click', showDebtorsView);
+  if (creditorsBtn) creditorsBtn.addEventListener('click', showCreditorsView);
+  if (stockValueBtn) stockValueBtn.addEventListener('click', showStockValueView);
+  if (productsBtn) productsBtn.addEventListener('click', showProductsView);
+  if (allClientsBtn) allClientsBtn.addEventListener('click', showAllClientsView);
+  if (adminPanelBtn) adminPanelBtn.addEventListener('click', showAdminPanel);
   
-  document.getElementById('shop-date').addEventListener('change', (e) => {
+  if (shopDate) shopDate.addEventListener('change', (e) => {
     if (currentShop) {
       loadShopData(currentShop, e.target.value);
     }
   });
   
-  document.getElementById('sales-date').addEventListener('change', (e) => {
+  if (salesDate) salesDate.addEventListener('change', (e) => {
     loadTotalSalesData(e.target.value);
   });
   
-  document.getElementById('clients-shop-filter').addEventListener('change', loadAllClientsData);
-  document.getElementById('clients-date-filter').addEventListener('change', loadAllClientsData);
+  if (clientsShopFilter) clientsShopFilter.addEventListener('change', loadAllClientsData);
+  if (clientsDateFilter) clientsDateFilter.addEventListener('change', loadAllClientsData);
   
-  document.getElementById('export-doc1').addEventListener('click', () => exportDoc1PDF());
-  document.getElementById('export-doc2').addEventListener('click', () => exportDoc2PDF());
+  if (exportDoc1) exportDoc1.addEventListener('click', () => exportDoc1PDF());
+  if (exportDoc2) exportDoc2.addEventListener('click', () => exportDoc2PDF());
 }
 
 function showDashboard() {
