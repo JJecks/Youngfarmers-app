@@ -87,7 +87,9 @@ function showSplashScreen() {
 
 function hideSplashScreen() {
   const splash = document.getElementById('splash-screen');
-  splash.classList.remove('active');
+  if (splash) {
+    splash.classList.remove('active');
+  }
 }
 
 function showAuthScreen() {
