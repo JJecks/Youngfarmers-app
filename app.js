@@ -1,1891 +1,1640 @@
-// app.js - Young Farmers Stock Management App - PART 1 OF 3
-// Paste Part 2 directly after this on the next line
-
-import { auth, db, googleProvider } from './firebase-config.js';
+import { auth, db } from './firebase-config.js';
 import { 
+  createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
   signInWithPopup,
-  signOut,
-  onAuthStateChanged 
-} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signOut 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { 
+  doc, 
+  setDoc, 
+  getDoc, 
   collection, 
-  addDoc, 
+  query, 
+  where, 
+  getDocs,
   updateDoc,
   deleteDoc,
-  doc, 
-  getDoc,
-  getDocs,
-  setDoc,
-  query, 
-  where,
+  addDoc,
   orderBy,
   Timestamp,
-  onSnapshot,
   writeBatch
-} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// Global state
+const ADMIN_EMAIL = "jeckstom777@gmail.com";
+
+const SHOPS = [
+  { id: 'usigu', name: 'Usigu' },
+  { id: 'port-victoria', name: 'Port Victoria' },
+  { id: 'mbita', name: 'Mbita' },
+  { id: 'usenge', name: 'Usenge' },
+  { id: 'lwanda-kotieno', name: 'Lwanda Kotieno' },
+  { id: 'obambo', name: 'Obambo' },
+  { id: 'sori', name: 'Sori' }
+];
+
+const PRODUCTS = [
+  { id: 'starter-mash', name: 'Starter Mash', costPrice: 4240, salesPrice: 4600 },
+  { id: 'samakgro-1mm', name: 'Samakgro 1MM', costPrice: 3690, salesPrice: 4150 },
+  { id: 'samakgro-2mm', name: 'Samakgro 2MM', costPrice: 3600, salesPrice: 3200 },
+  { id: 'samakgro-3mm', name: 'Samakgro 3MM', costPrice: 3200, salesPrice: 2850 },
+  { id: 'samakgro-4mmhp', name: 'Samakgro 4MMHP', costPrice: 2950, salesPrice: 2650 },
+  { id: 'samakgro-4-5mm', name: 'Samakgro 4.5MM', costPrice: 2800, salesPrice: 2500 },
+  { id: 'broodstock', name: 'Broodstock', costPrice: 3900, salesPrice: 3900 }
+];
+
 let currentUser = null;
 let currentUserData = null;
+let currentView = 'dashboard';
 let currentShop = null;
+let pendingFormData = {};
 
-// Available shops
-const SHOPS = [
-  'Usigu',
-  'Port Victoria',
-  'Mbita',
-  'Usenge',
-  'Lwanda Kotieno',
-  'Obambo',
-  'Sori'
-];
-
-// Products with cost and sales prices
-const PRODUCTS = [
-  { name: 'Starter Mash', cost: 4240, sales: 4600 },
-  { name: 'Samakgro 1MM', cost: 3690, sales: 4150 },
-  { name: 'Samakgro 2MM', cost: 3600, sales: 3200 },
-  { name: 'Samakgro 3MM', cost: 3200, sales: 2850 },
-  { name: 'Samakgro 4MMHP', cost: 2950, sales: 2650 },
-  { name: 'Samakgro 4.5MM', cost: 2800, sales: 2500 },
-  { name: 'Broodstock', cost: 3900, sales: 3900 }
-];
-
-// Initialize app
-document.addEventListener('DOMContentLoaded', () => {
-  initializeAuthListeners();
-  setupEventListeners();
-  checkAuthState();
-});
-
-// Auth state observer
-function checkAuthState() {
+window.addEventListener('DOMContentLoaded', () => {
+  showSplashScreen();
+  setupAuthListeners();
+  setupNavigationListeners();
+  
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUser = user;
-      await loadUserData(user);
+      await loadUserData();
+      if (currentUserData && currentUserData.status === 'active') {
+        hideSplashScreen();
+        showMainScreen();
+      } else {
+        hideSplashScreen();
+        showToast('Your account is pending approval. Please contact the administrator.');
+        signOut(auth);
+      }
     } else {
-      currentUser = null;
-      currentUserData = null;
+      hideSplashScreen();
       showAuthScreen();
     }
   });
+});
+
+function showSplashScreen() {
+  const splash = document.getElementById('splash-screen');
+  splash.classList.add('active');
+  setTimeout(() => {
+    splash.classList.remove('active');
+  }, 2500);
 }
 
-// Load user data from Firestore
-async function loadUserData(user) {
-  try {
-    console.log('Loading user data for:', user.uid);
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    
-    if (userDoc.exists()) {
-      currentUserData = userDoc.data();
-      console.log('User data loaded:', currentUserData);
-      
-      // Check if role is pending
-      if (currentUserData.role === 'pending') {
-        showPendingApproval();
-      } else {
-        currentShop = currentUserData.assignedShop;
-        showMainApp();
-        loadDashboard();
-      }
-    } else {
-      console.log('User document does not exist, showing pending');
-      showPendingApproval();
-    }
-  } catch (error) {
-    console.error('Error loading user data:', error);
-    showError('Error loading user data: ' + error.message);
-  }
+function hideSplashScreen() {
+  const splash = document.getElementById('splash-screen');
+  splash.classList.remove('active');
 }
 
-// Initialize auth listeners
-function initializeAuthListeners() {
-  // Email login
-  const loginForm = document.getElementById('login-form');
-  if (loginForm) {
-    loginForm.addEventListener('submit', handleEmailLogin);
-  }
-
-  // Email signup
-  const signupForm = document.getElementById('signup-form');
-  if (signupForm) {
-    signupForm.addEventListener('submit', handleEmailSignup);
-  }
-
-  // Google login
-  const googleLoginBtn = document.getElementById('google-login-btn');
-  if (googleLoginBtn) {
-    googleLoginBtn.addEventListener('click', handleGoogleLogin);
-  }
-
-  // Google signup
-  const googleSignupBtn = document.getElementById('google-signup-btn');
-  if (googleSignupBtn) {
-    googleSignupBtn.addEventListener('click', handleGoogleSignup);
-  }
-
-  // Logout
-  const logoutBtn = document.getElementById('logout-btn');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', handleLogout);
-  }
-
-  // Toggle between login and signup
-  const showSignupLink = document.getElementById('show-signup');
-  const showLoginLink = document.getElementById('show-login');
-  
-  if (showSignupLink) {
-    showSignupLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      document.getElementById('login-container').style.display = 'none';
-      document.getElementById('signup-container').style.display = 'block';
-    });
-  }
-  
-  if (showLoginLink) {
-    showLoginLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      document.getElementById('signup-container').style.display = 'none';
-      document.getElementById('login-container').style.display = 'block';
-    });
-  }
-}
-
-// Handle email login
-async function handleEmailLogin(e) {
-  e.preventDefault();
-  const email = document.getElementById('login-email').value;
-  const password = document.getElementById('login-password').value;
-
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-    // Auth state observer will handle the rest
-  } catch (error) {
-    console.error('Login error:', error);
-    showError('Login failed: ' + error.message);
-  }
-}
-
-// Handle email signup - FIXED VERSION
-async function handleEmailSignup(e) {
-  e.preventDefault();
-  const email = document.getElementById('signup-email').value;
-  const password = document.getElementById('signup-password').value;
-  const name = document.getElementById('signup-name').value;
-
-  console.log('=== STARTING EMAIL SIGNUP ===');
-  console.log('Email:', email);
-  console.log('Name:', name);
-
-  try {
-    // Create auth account
-    console.log('Creating auth account...');
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-    console.log('Auth account created, UID:', user.uid);
-
-    // Create user document - FIXED APPROACH
-    await createUserDocument(user.uid, email, name, false);
-    
-    console.log('=== SIGNUP COMPLETE ===');
-    // Auth state observer will handle the rest
-  } catch (error) {
-    console.error('=== SIGNUP ERROR ===');
-    console.error('Error:', error);
-    console.error('Error code:', error.code);
-    console.error('Error message:', error.message);
-    showError('Signup failed: ' + error.message);
-  }
-}
-
-// Handle Google login
-async function handleGoogleLogin() {
-  try {
-    await signInWithPopup(auth, googleProvider);
-    // Auth state observer will handle the rest
-  } catch (error) {
-    console.error('Google login error:', error);
-    showError('Google login failed: ' + error.message);
-  }
-}
-
-// Handle Google signup - FIXED VERSION
-async function handleGoogleSignup() {
-  console.log('=== STARTING GOOGLE SIGNUP ===');
-  
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    const user = result.user;
-    console.log('Google auth complete, UID:', user.uid);
-    console.log('Email:', user.email);
-    console.log('Display Name:', user.displayName);
-
-    // Check if user document already exists
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    
-    if (!userDoc.exists()) {
-      console.log('User document does not exist, creating...');
-      await createUserDocument(user.uid, user.email, user.displayName, false);
-    } else {
-      console.log('User document already exists');
-    }
-    
-    console.log('=== GOOGLE SIGNUP COMPLETE ===');
-    // Auth state observer will handle the rest
-  } catch (error) {
-    console.error('=== GOOGLE SIGNUP ERROR ===');
-    console.error('Error:', error);
-    console.error('Error code:', error.code);
-    console.error('Error message:', error.message);
-    showError('Google signup failed: ' + error.message);
-  }
-}
-
-// Create user document in Firestore - COMPLETELY REWRITTEN FIX
-async function createUserDocument(uid, email, name, isAdmin = false) {
-  console.log('=== CREATE USER DOCUMENT START ===');
-  console.log('UID:', uid);
-  console.log('Email:', email);
-  console.log('Name:', name);
-  console.log('Is Admin?', isAdmin);
-
-  try {
-    // Check if user is admin
-    const adminEmail = 'jeckstom777@gmail.com';
-    const shouldBeAdmin = email.toLowerCase() === adminEmail.toLowerCase();
-    
-    console.log('Should be admin?', shouldBeAdmin);
-
-    // Prepare user data
-    const userData = {
-      email: email,
-      name: name || 'User',
-      role: shouldBeAdmin ? 'manager_full' : 'pending',
-      assignedShop: shouldBeAdmin ? 'All Shops' : null,
-      createdAt: Timestamp.now(),
-      lastLogin: Timestamp.now()
-    };
-
-    console.log('User data prepared:', userData);
-    console.log('Firestore instance:', db);
-    console.log('Project ID:', db._databaseId.projectId);
-
-    // Use the simpler doc/setDoc approach with merge
-    const userRef = doc(db, 'users', uid);
-    console.log('Document reference created');
-    console.log('Path:', userRef.path);
-    
-    // Try setDoc with merge option and no timeout wrapper
-    console.log('Calling setDoc with merge...');
-    await setDoc(userRef, userData, { merge: true });
-    
-    console.log('✅ User document created successfully!');
-    console.log('=== CREATE USER DOCUMENT END ===');
-    
-    return true;
-  } catch (error) {
-    console.error('=== CREATE USER DOCUMENT ERROR ===');
-    console.error('Error creating user document:', error);
-    console.error('Error code:', error.code);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    
-    // Try alternative approach with addDoc to a subcollection as fallback
-    console.log('Attempting fallback method...');
-    try {
-      await setDoc(doc(db, 'users', uid), {
-        email: email,
-        name: name || 'User',
-        role: email.toLowerCase() === 'jeckstom777@gmail.com' ? 'manager_full' : 'pending',
-        assignedShop: email.toLowerCase() === 'jeckstom777@gmail.com' ? 'All Shops' : null,
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString()
-      });
-      console.log('✅ Fallback method succeeded!');
-      return true;
-    } catch (fallbackError) {
-      console.error('❌ Fallback method also failed:', fallbackError);
-      throw error;
-    }
-  }
-}
-
-// Handle logout
-async function handleLogout() {
-  try {
-    await signOut(auth);
-    currentUser = null;
-    currentUserData = null;
-    currentShop = null;
-    showAuthScreen();
-  } catch (error) {
-    console.error('Logout error:', error);
-    showError('Logout failed: ' + error.message);
-  }
-}
-// app.js - PART 2 OF 3
-// Paste Part 3 directly after this on the next line
-
-// Screen management
 function showAuthScreen() {
-  document.getElementById('auth-screen').style.display = 'block';
-  document.getElementById('pending-screen').style.display = 'none';
-  document.getElementById('main-app').style.display = 'none';
-  document.getElementById('login-container').style.display = 'block';
-  document.getElementById('signup-container').style.display = 'none';
+  hideAllScreens();
+  document.getElementById('auth-screen').classList.add('active');
 }
 
-function showPendingApproval() {
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('pending-screen').style.display = 'block';
-  document.getElementById('main-app').style.display = 'none';
+function showMainScreen() {
+  hideAllScreens();
+  document.getElementById('main-screen').classList.add('active');
+  showDashboard();
 }
 
-function showMainApp() {
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('pending-screen').style.display = 'none';
-  document.getElementById('main-app').style.display = 'block';
+function hideAllScreens() {
+  document.querySelectorAll('.screen').forEach(screen => {
+    screen.classList.remove('active');
+  });
+}
+
+function setupAuthListeners() {
+  const authForm = document.getElementById('auth-form');
+  const toggleAuth = document.getElementById('toggle-auth');
+  const googleSignin = document.getElementById('google-signin');
   
-  // Update user info display
-  document.getElementById('user-name').textContent = currentUserData.name;
-  document.getElementById('user-role').textContent = formatRole(currentUserData.role);
-  document.getElementById('user-shop').textContent = currentUserData.assignedShop || 'N/A';
+  authForm.addEventListener('submit', handleAuthSubmit);
+  toggleAuth.addEventListener('click', toggleAuthMode);
+  googleSignin.addEventListener('click', handleGoogleSignin);
+}
+
+let isSignUp = false;
+
+function toggleAuthMode(e) {
+  e.preventDefault();
+  isSignUp = !isSignUp;
+  const title = document.getElementById('auth-title');
+  const submitBtn = document.getElementById('auth-submit');
+  const nameField = document.getElementById('auth-name');
+  const toggleText = document.getElementById('toggle-text');
+  const toggleLink = document.getElementById('toggle-auth');
   
-  // Show/hide admin panel based on role
-  const adminNavBtn = document.getElementById('admin-nav-btn');
-  if (currentUserData.role === 'manager_full') {
-    adminNavBtn.style.display = 'block';
+  if (isSignUp) {
+    title.textContent = 'Sign Up';
+    submitBtn.textContent = 'Sign Up';
+    nameField.style.display = 'block';
+    toggleText.textContent = 'Already have an account?';
+    toggleLink.textContent = 'Sign In';
   } else {
-    adminNavBtn.style.display = 'none';
+    title.textContent = 'Sign In';
+    submitBtn.textContent = 'Sign In';
+    nameField.style.display = 'none';
+    toggleText.textContent = "Don't have an account?";
+    toggleLink.textContent = 'Sign Up';
+  }
+  
+  document.getElementById('auth-error').textContent = '';
+}
+
+async function handleAuthSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('auth-email').value;
+  const password = document.getElementById('auth-password').value;
+  const name = document.getElementById('auth-name').value;
+  const errorDiv = document.getElementById('auth-error');
+  
+  try {
+    if (isSignUp) {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await createUserDocument(userCredential.user.uid, email, name);
+      showToast('Account created! Waiting for admin approval.');
+      signOut(auth);
+    } else {
+      await signInWithEmailAndPassword(auth, email, password);
+    }
+  } catch (error) {
+    errorDiv.textContent = error.message;
   }
 }
 
-// Format role for display
-function formatRole(role) {
-  const roleMap = {
-    'manager_full': 'Manager (Full Access)',
-    'manager_view': 'Manager (View Only)',
-    'attendant': 'Attendant',
-    'pending': 'Pending Approval'
-  };
-  return roleMap[role] || role;
+async function handleGoogleSignin() {
+  const provider = new GoogleAuthProvider();
+  try {
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+    
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    if (!userDoc.exists()) {
+      await createUserDocument(user.uid, user.email, user.displayName || 'User');
+      showToast('Account created! Waiting for admin approval.');
+      await signOut(auth);
+    }
+  } catch (error) {
+    console.error('Google sign-in error:', error);
+    document.getElementById('auth-error').textContent = error.message;
+  }
 }
 
-// Setup event listeners
-function setupEventListeners() {
-  // Navigation
-  document.getElementById('dashboard-nav-btn').addEventListener('click', () => {
-    showSection('dashboard-section');
-    loadDashboard();
-  });
+async function createUserDocument(uid, email, name) {
+  const isAdmin = email === ADMIN_EMAIL;
   
-  document.getElementById('stock-nav-btn').addEventListener('click', () => {
-    showSection('stock-section');
-    loadStockPage();
-  });
-  
-  document.getElementById('reports-nav-btn').addEventListener('click', () => {
-    showSection('reports-section');
-    loadReportsPage();
-  });
-  
-  document.getElementById('stock-value-nav-btn').addEventListener('click', () => {
-    showSection('stock-value-section');
-    loadStockValuePage();
-  });
-  
-  const adminNavBtn = document.getElementById('admin-nav-btn');
-  if (adminNavBtn) {
-    adminNavBtn.addEventListener('click', () => {
-      showSection('admin-section');
-      loadAdminPanel();
+  try {
+    const batch = writeBatch(db);
+    const userRef = doc(db, 'users', uid);
+    
+    batch.set(userRef, {
+      email: email,
+      name: name,
+      role: isAdmin ? 'manager_full' : 'pending',
+      shop: null,
+      status: isAdmin ? 'active' : 'pending',
+      createdAt: Timestamp.now()
     });
-  }
-
-  // Shop selector
-  document.getElementById('shop-selector').addEventListener('change', (e) => {
-    currentShop = e.target.value;
-    loadStockPage();
-  });
-
-  // Date selector
-  document.getElementById('stock-date').addEventListener('change', () => {
-    loadStockPage();
-  });
-
-  // Add entry buttons
-  document.getElementById('add-credit-sale-btn').addEventListener('click', saveCreditSale);
-  document.getElementById('add-prepayment-btn').addEventListener('click', savePrepayment);
-  document.getElementById('add-debt-payment-btn').addEventListener('click', saveDebtPayment);
-  document.getElementById('add-feed-release-btn').addEventListener('click', saveFeedRelease);
-  document.getElementById('add-transfer-btn').addEventListener('click', saveTransfer);
-  document.getElementById('add-client-btn').addEventListener('click', saveClient);
-
-  // Save stock button
-  document.getElementById('save-stock-btn').addEventListener('click', saveStockData);
-
-  // Export buttons
-  document.getElementById('export-doc1-btn').addEventListener('click', exportDoc1);
-  document.getElementById('export-doc2-btn').addEventListener('click', exportDoc2);
-}
-
-// Show section
-function showSection(sectionId) {
-  const sections = ['dashboard-section', 'stock-section', 'reports-section', 'stock-value-section', 'admin-section'];
-  sections.forEach(id => {
-    document.getElementById(id).style.display = id === sectionId ? 'block' : 'none';
-  });
-}
-
-// Load dashboard
-async function loadDashboard() {
-  try {
-    // Get today's date
-    const today = new Date().toISOString().split('T')[0];
     
-    // Load summary data
-    let totalStock = 0;
-    let totalSales = 0;
-    let totalDebtors = 0;
-    let totalCreditors = 0;
-
-    for (const shop of SHOPS) {
-      // Check if user has access to this shop
-      if (currentUserData.role === 'attendant' && currentUserData.assignedShop !== shop) {
-        continue;
-      }
-
-      // Get stock data
-      const stockRef = doc(db, 'stock', `${shop}_${today}`);
-      const stockDoc = await getDoc(stockRef);
-      
-      if (stockDoc.exists()) {
-        const stockData = stockDoc.data();
-        
-        // Calculate stock value
-        PRODUCTS.forEach(product => {
-          const closing = stockData.closingStock?.[product.name] || 0;
-          totalStock += closing * product.cost;
-        });
-
-        // Add cash from regular sales
-        totalSales += stockData.totalCash || 0;
-      }
-
-      // Get credit sales (debtors)
-      const creditQuery = query(
-        collection(db, 'creditSales'),
-        where('shop', '==', shop),
-        where('status', '==', 'pending')
-      );
-      const creditDocs = await getDocs(creditQuery);
-      creditDocs.forEach(doc => {
-        const data = doc.data();
-        totalDebtors += data.remainingAmount || 0;
-      });
-
-      // Get prepayments (creditors)
-      const prepayQuery = query(
-        collection(db, 'prepayments'),
-        where('shop', '==', shop),
-        where('status', '==', 'pending')
-      );
-      const prepayDocs = await getDocs(prepayQuery);
-      prepayDocs.forEach(doc => {
-        const data = doc.data();
-        totalCreditors += data.remainingBags || 0;
-      });
-    }
-
-    // Update dashboard
-    document.getElementById('total-stock').textContent = `KSh ${totalStock.toLocaleString()}`;
-    document.getElementById('total-sales').textContent = `KSh ${totalSales.toLocaleString()}`;
-    document.getElementById('total-debtors').textContent = `KSh ${totalDebtors.toLocaleString()}`;
-    document.getElementById('total-creditors').textContent = `${totalCreditors} bags`;
-
+    await batch.commit();
+    console.log('User document created successfully');
   } catch (error) {
-    console.error('Error loading dashboard:', error);
-    showError('Error loading dashboard');
+    console.error('Error creating user document:', error);
+    throw error;
   }
 }
 
-// Load stock page
-async function loadStockPage() {
-  const selectedShop = document.getElementById('shop-selector').value;
-  const selectedDate = document.getElementById('stock-date').value;
+async function loadUserData() {
+  const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+  if (userDoc.exists()) {
+    currentUserData = userDoc.data();
+    updateUIForRole();
+  }
+}
 
-  if (!selectedShop || !selectedDate) return;
+function updateUIForRole() {
+  const role = currentUserData.role;
+  
+  const managerBtns = document.querySelectorAll('.manager-btn');
+  const adminBtn = document.querySelector('.admin-btn');
+  
+  if (role === 'manager_full' || role === 'manager_view') {
+    managerBtns.forEach(btn => btn.style.display = 'block');
+  } else {
+    managerBtns.forEach(btn => btn.style.display = 'none');
+  }
+  
+  if (role === 'manager_full') {
+    adminBtn.style.display = 'block';
+  } else {
+    adminBtn.style.display = 'none';
+  }
+}
 
-  currentShop = selectedShop;
+function setupNavigationListeners() {
+  document.getElementById('logout-btn').addEventListener('click', () => {
+    signOut(auth);
+  });
+  
+  document.getElementById('back-btn').addEventListener('click', () => {
+    showDashboard();
+  });
+  
+  document.querySelectorAll('.shop-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const shopId = btn.dataset.shop;
+      showShopView(shopId);
+    });
+  });
+  
+  document.getElementById('total-sales-btn').addEventListener('click', showTotalSalesView);
+  document.getElementById('debtors-btn').addEventListener('click', showDebtorsView);
+  document.getElementById('creditors-btn').addEventListener('click', showCreditorsView);
+  document.getElementById('stock-value-btn').addEventListener('click', showStockValueView);
+  document.getElementById('products-btn').addEventListener('click', showProductsView);
+  document.getElementById('all-clients-btn').addEventListener('click', showAllClientsView);
+  document.getElementById('admin-panel-btn').addEventListener('click', showAdminPanel);
+  
+  document.getElementById('shop-date').addEventListener('change', (e) => {
+    if (currentShop) {
+      loadShopData(currentShop, e.target.value);
+    }
+  });
+  
+  document.getElementById('sales-date').addEventListener('change', (e) => {
+    loadTotalSalesData(e.target.value);
+  });
+  
+  document.getElementById('clients-shop-filter').addEventListener('change', loadAllClientsData);
+  document.getElementById('clients-date-filter').addEventListener('change', loadAllClientsData);
+  
+  document.getElementById('export-doc1').addEventListener('click', () => exportDoc1PDF());
+  document.getElementById('export-doc2').addEventListener('click', () => exportDoc2PDF());
+}
 
-  // Populate shop selector if needed
-  const shopSelector = document.getElementById('shop-selector');
-  if (shopSelector.options.length === 1) {
-    if (currentUserData.role === 'attendant') {
-      // Attendant sees only their shop
-      const option = document.createElement('option');
-      option.value = currentUserData.assignedShop;
-      option.textContent = currentUserData.assignedShop;
-      shopSelector.appendChild(option);
-      shopSelector.value = currentUserData.assignedShop;
-      shopSelector.disabled = true;
-    } else {
-      // Managers see all shops
-      SHOPS.forEach(shop => {
-        const option = document.createElement('option');
-        option.value = shop;
-        option.textContent = shop;
-        shopSelector.appendChild(option);
+function showDashboard() {
+  hideAllViews();
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('screen-title').textContent = 'Young Farmers';
+  document.getElementById('back-btn').style.display = 'none';
+  currentView = 'dashboard';
+}
+
+function hideAllViews() {
+  document.querySelectorAll('.content').forEach(view => {
+    view.style.display = 'none';
+  });
+}
+
+async function showShopView(shopId) {
+  hideAllViews();
+  currentShop = shopId;
+  const shopName = SHOPS.find(s => s.id === shopId).name;
+  document.getElementById('screen-title').textContent = shopName;
+  document.getElementById('back-btn').style.display = 'block';
+  document.getElementById('shop-view').style.display = 'block';
+  
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('shop-date').value = today;
+  
+  await loadShopData(shopId, today);
+}
+
+async function loadShopData(shopId, date) {
+  const content = document.getElementById('shop-content');
+  const role = currentUserData.role;
+  const userShop = currentUserData.shop;
+  
+  if (role === 'attendant' && userShop !== shopId) {
+    content.innerHTML = await renderOtherShopStock(shopId, date);
+    return;
+  }
+  
+  const stockData = await getShopStock(shopId, date);
+  
+  if (role === 'attendant') {
+    content.innerHTML = renderAttendantView(shopId, date, stockData);
+    setupAttendantFormListeners(shopId, date);
+  } else {
+    content.innerHTML = renderManagerShopView(shopId, date, stockData);
+  }
+}
+
+async function renderOtherShopStock(shopId, date) {
+  const stockData = await getShopStock(shopId, date);
+  
+  let html = '<div class="summary-card"><h2>Stock Available</h2>';
+  html += '<table><thead><tr><th>Product</th><th>Bags Available</th></tr></thead><tbody>';
+  
+  PRODUCTS.forEach(product => {
+    const stock = stockData.stock[product.id] || { closing: 0 };
+    html += `<tr><td>${product.name}</td><td>${stock.closing}</td></tr>`;
+  });
+  
+  html += '</tbody></table></div>';
+  return html;
+}
+function renderAttendantView(shopId, date, stockData) {
+  let html = '<div class="summary-card">';
+  html += '<h2>Closing Stock Update</h2>';
+  html += '<form id="closing-stock-form"><table>';
+  html += '<thead><tr><th>#</th><th>Feed Name</th><th>Opening Stock</th><th>Restocking</th><th>Closing Stock</th><th>Price</th><th>Discount</th><th>Selling Price</th></tr></thead>';
+  html += '<tbody>';
+  
+  let totalOpening = 0;
+  let totalRestocking = 0;
+  let totalClosing = 0;
+  
+  PRODUCTS.forEach((product, index) => {
+    const stock = stockData.stock[product.id] || { opening: 0, restocking: 0, closing: 0, discount: 0 };
+    const isFirstTime = !stockData.initialized;
+    
+    totalOpening += stock.opening;
+    totalRestocking += stock.restocking;
+    
+    html += `<tr>`;
+    html += `<td>${index + 1}</td>`;
+    html += `<td>${product.name}</td>`;
+    html += `<td><input type="number" name="opening-${product.id}" value="${stock.opening}" ${isFirstTime ? '' : 'readonly'}></td>`;
+    html += `<td><input type="number" name="restocking-${product.id}" value="${stock.restocking}" min="0"></td>`;
+    html += `<td><input type="number" name="closing-${product.id}" value="${stock.closing}" min="0" required></td>`;
+    html += `<td>${product.salesPrice}</td>`;
+    html += `<td><input type="number" name="discount-${product.id}" value="${stock.discount}" min="0"></td>`;
+    html += `<td class="selling-price-${product.id}">${product.salesPrice - stock.discount}</td>`;
+    html += `</tr>`;
+  });
+  
+  html += `<tr><td colspan="2"><strong>TOTAL</strong></td><td><strong id="total-opening">${totalOpening}</strong></td><td><strong id="total-restocking">${totalRestocking}</strong></td><td><strong id="total-closing">${totalClosing}</strong></td><td colspan="3"></td></tr>`;
+  html += '</tbody></table>';
+  html += '<button type="submit" class="add-btn">Save Closing Stock</button>';
+  html += '</form></div>';
+  
+  html += renderCreditSalesForm();
+  html += renderPrepaymentsForm();
+  html += renderDebtPaymentsForm(stockData.debtors || []);
+  html += renderCreditorReleasesForm(stockData.creditors || []);
+  html += renderTransfersForm();
+  html += renderClientsForm();
+  
+  return html;
+}
+
+function renderCreditSalesForm() {
+  let html = '<div class="form-section">';
+  html += '<h3 class="section-title">Sales Made on Credit</h3>';
+  html += '<div class="form-row">';
+  html += '<input type="text" id="debtor-name" placeholder="Debtor Name">';
+  html += '<select id="debtor-feed"><option value="">Select Feed</option>';
+  PRODUCTS.forEach(p => html += `<option value="${p.id}">${p.name}</option>`);
+  html += '</select>';
+  html += '<input type="number" id="debtor-bags" placeholder="Number of Bags" min="1">';
+  html += '<input type="number" id="debtor-discount" placeholder="Discount (KSh)" min="0" value="0">';
+  html += '</div>';
+  html += '<button type="button" class="add-btn" id="save-credit-sale">Save</button>';
+  html += '<button type="button" class="add-btn secondary-btn" id="add-new-credit-sale">Add New Entry</button>';
+  html += '<div class="item-list" id="credit-sales-list"></div>';
+  html += '</div>';
+  return html;
+}
+
+function renderPrepaymentsForm() {
+  let html = '<div class="form-section">';
+  html += '<h3 class="section-title">Prepayments Made</h3>';
+  html += '<div class="form-row">';
+  html += '<input type="text" id="prepayment-name" placeholder="Client Name">';
+  html += '<input type="number" id="prepayment-amount" placeholder="Amount Paid (KSh)" min="1">';
+  html += '</div>';
+  html += '<button type="button" class="add-btn" id="save-prepayment">Save</button>';
+  html += '<button type="button" class="add-btn secondary-btn" id="add-new-prepayment">Add New Entry</button>';
+  html += '<div class="item-list" id="prepayments-list"></div>';
+  html += '</div>';
+  return html;
+}
+
+function renderDebtPaymentsForm(debtors) {
+  let html = '<div class="form-section">';
+  html += '<h3 class="section-title">Payments Made Towards Debts</h3>';
+  
+  if (debtors.length === 0) {
+    html += '<div class="info-message greyed-out">No debtors recorded. Please add a credit sale first.</div>';
+  } else {
+    html += '<div class="form-row">';
+    html += '<select id="debt-payment-debtor"><option value="">Select Debtor</option>';
+    debtors.forEach(d => html += `<option value="${d.name}">${d.name}</option>`);
+    html += '</select>';
+    html += '<input type="number" id="debt-payment-amount" placeholder="Amount Paid (KSh)" min="1">';
+    html += '</div>';
+    html += '<button type="button" class="add-btn" id="save-debt-payment">Save</button>';
+    html += '<button type="button" class="add-btn secondary-btn" id="add-new-debt-payment">Add New Entry</button>';
+    html += '<div class="item-list" id="debt-payments-list"></div>';
+  }
+  
+  html += '</div>';
+  return html;
+}
+
+function renderCreditorReleasesForm(creditors) {
+  let html = '<div class="form-section">';
+  html += '<h3 class="section-title">Feeds Released to Creditors</h3>';
+  
+  if (creditors.length === 0) {
+    html += '<div class="info-message greyed-out">No creditors with prepayments.</div>';
+  } else {
+    html += '<div class="form-row">';
+    html += '<select id="creditor-name"><option value="">Select Creditor</option>';
+    creditors.forEach(c => html += `<option value="${c.name}">${c.name}</option>`);
+    html += '</select>';
+    html += '<select id="creditor-feed"><option value="">Select Feed</option>';
+    PRODUCTS.forEach(p => html += `<option value="${p.id}">${p.name}</option>`);
+    html += '</select>';
+    html += '<input type="number" id="creditor-bags" placeholder="Number of Bags" min="1">';
+    html += '</div>';
+    html += '<button type="button" class="add-btn" id="save-creditor-release">Save</button>';
+    html += '<button type="button" class="add-btn secondary-btn" id="add-new-creditor-release">Add New Entry</button>';
+    html += '<div class="item-list" id="creditor-releases-list"></div>';
+  }
+  
+  html += '</div>';
+  return html;
+}
+
+function renderTransfersForm() {
+  let html = '<div class="form-section">';
+  html += '<h3 class="section-title">Transfers to Other Shops</h3>';
+  html += '<div class="form-row">';
+  html += '<select id="transfer-feed"><option value="">Select Feed</option>';
+  PRODUCTS.forEach(p => html += `<option value="${p.id}">${p.name}</option>`);
+  html += '</select>';
+  html += '<input type="number" id="transfer-bags" placeholder="Number of Bags" min="1">';
+  html += '<select id="transfer-destination"><option value="">Select Destination Shop</option>';
+  SHOPS.forEach(s => html += `<option value="${s.id}">${s.name}</option>`);
+  html += '</select>';
+  html += '</div>';
+  html += '<button type="button" class="add-btn" id="save-transfer">Save</button>';
+  html += '<button type="button" class="add-btn secondary-btn" id="add-new-transfer">Add New Entry</button>';
+  html += '<div class="item-list" id="transfers-list"></div>';
+  html += '</div>';
+  return html;
+}
+
+function renderClientsForm() {
+  let html = '<div class="form-section">';
+  html += '<h3 class="section-title">Client Details for Regular Sales</h3>';
+  html += '<div class="form-row">';
+  html += '<input type="text" id="client-name" placeholder="Client Name">';
+  html += '<input type="text" id="client-phone" placeholder="Phone Number">';
+  html += '<select id="client-feed"><option value="">Select Feed</option>';
+  PRODUCTS.forEach(p => html += `<option value="${p.id}">${p.name}</option>`);
+  html += '</select>';
+  html += '<input type="number" id="client-bags" placeholder="Number of Bags" min="1">';
+  html += '<input type="number" id="client-amount" placeholder="Amount Paid (KSh)" min="1">';
+  html += '</div>';
+  html += '<button type="button" class="add-btn" id="save-client">Save</button>';
+  html += '<button type="button" class="add-btn secondary-btn" id="add-new-client">Add New Entry</button>';
+  html += '<div class="item-list" id="clients-list"></div>';
+  html += '</div>';
+  return html;
+}
+
+function setupAttendantFormListeners(shopId, date) {
+  document.getElementById('closing-stock-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await saveClosingStock(shopId, date, e.target);
+  });
+  
+  PRODUCTS.forEach(product => {
+    const discountInput = document.querySelector(`input[name="discount-${product.id}"]`);
+    const closingInput = document.querySelector(`input[name="closing-${product.id}"]`);
+    const restockingInput = document.querySelector(`input[name="restocking-${product.id}"]`);
+    
+    if (discountInput) {
+      discountInput.addEventListener('input', () => {
+        const discount = parseInt(discountInput.value) || 0;
+        const sellingPrice = product.salesPrice - discount;
+        document.querySelector(`.selling-price-${product.id}`).textContent = sellingPrice;
       });
     }
-  }
+    
+    if (closingInput) {
+      closingInput.addEventListener('input', updateTotals);
+    }
+    
+    if (restockingInput) {
+      restockingInput.addEventListener('input', updateTotals);
+    }
+  });
+  
+  document.getElementById('save-credit-sale')?.addEventListener('click', () => saveCreditSale(shopId, date));
+  document.getElementById('add-new-credit-sale')?.addEventListener('click', clearCreditSaleForm);
+  
+  document.getElementById('save-prepayment')?.addEventListener('click', () => savePrepayment(shopId, date));
+  document.getElementById('add-new-prepayment')?.addEventListener('click', clearPrepaymentForm);
+  
+  document.getElementById('save-debt-payment')?.addEventListener('click', () => saveDebtPayment(shopId, date));
+  document.getElementById('add-new-debt-payment')?.addEventListener('click', clearDebtPaymentForm);
+  
+  document.getElementById('save-creditor-release')?.addEventListener('click', () => saveCreditorRelease(shopId, date));
+  document.getElementById('add-new-creditor-release')?.addEventListener('click', clearCreditorReleaseForm);
+  
+  document.getElementById('save-transfer')?.addEventListener('click', () => saveTransfer(shopId, date));
+  document.getElementById('add-new-transfer')?.addEventListener('click', clearTransferForm);
+  
+  document.getElementById('save-client')?.addEventListener('click', () => saveClient(shopId, date));
+  document.getElementById('add-new-client')?.addEventListener('click', clearClientForm);
+}
 
-  try {
-    // Get stock data
-    const stockRef = doc(db, 'stock', `${selectedShop}_${selectedDate}`);
-    const stockDoc = await getDoc(stockRef);
+function updateTotals() {
+  let totalOpening = 0;
+  let totalRestocking = 0;
+  let totalClosing = 0;
+  
+  PRODUCTS.forEach(product => {
+    const openingInput = document.querySelector(`input[name="opening-${product.id}"]`);
+    const restockingInput = document.querySelector(`input[name="restocking-${product.id}"]`);
+    const closingInput = document.querySelector(`input[name="closing-${product.id}"]`);
+    
+    if (openingInput) totalOpening += parseInt(openingInput.value) || 0;
+    if (restockingInput) totalRestocking += parseInt(restockingInput.value) || 0;
+    if (closingInput) totalClosing += parseInt(closingInput.value) || 0;
+  });
+  
+  const totalOpeningEl = document.getElementById('total-opening');
+  const totalRestockingEl = document.getElementById('total-restocking');
+  const totalClosingEl = document.getElementById('total-closing');
+  
+  if (totalOpeningEl) totalOpeningEl.textContent = totalOpening;
+  if (totalRestockingEl) totalRestockingEl.textContent = totalRestocking;
+  if (totalClosingEl) totalClosingEl.textContent = totalClosing;
+}
 
-    let stockData = {
-      openingStock: {},
-      restocking: {},
-      closingStock: {},
-      sales: {},
-      totalCash: 0
+async function saveClosingStock(shopId, date, form) {
+  const stockData = {};
+  const formData = new FormData(form);
+  
+  PRODUCTS.forEach(product => {
+    const opening = parseInt(formData.get(`opening-${product.id}`)) || 0;
+    const restocking = parseInt(formData.get(`restocking-${product.id}`)) || 0;
+    const closing = parseInt(formData.get(`closing-${product.id}`)) || 0;
+    const discount = parseInt(formData.get(`discount-${product.id}`)) || 0;
+    
+    stockData[product.id] = {
+      opening: opening,
+      restocking: restocking,
+      closing: closing,
+      discount: discount,
+      sellingPrice: product.salesPrice - discount
     };
-
-    if (stockDoc.exists()) {
-      stockData = stockDoc.data();
-    } else {
-      // Get previous day's closing stock for opening stock
-      const prevDate = new Date(selectedDate);
-      prevDate.setDate(prevDate.getDate() - 1);
-      const prevDateStr = prevDate.toISOString().split('T')[0];
-      
-      const prevStockRef = doc(db, 'stock', `${selectedShop}_${prevDateStr}`);
-      const prevStockDoc = await getDoc(prevStockRef);
-      
-      if (prevStockDoc.exists()) {
-        const prevData = prevStockDoc.data();
-        PRODUCTS.forEach(product => {
-          stockData.openingStock[product.name] = prevData.closingStock?.[product.name] || 0;
-        });
-      }
-    }
-
-    // Render stock table with restocking column
-    renderStockTable(stockData);
-
-    // Load transactions
-    await loadTransactions(selectedShop, selectedDate);
-
-  } catch (error) {
-    console.error('Error loading stock page:', error);
-    showError('Error loading stock data');
-  }
-}
-
-// Render stock table with restocking column
-function renderStockTable(stockData) {
-  const tbody = document.getElementById('stock-table-body');
-  tbody.innerHTML = '';
-
-  let totalCash = 0;
-
-  PRODUCTS.forEach(product => {
-    const opening = stockData.openingStock?.[product.name] || 0;
-    const restocking = stockData.restocking?.[product.name] || 0;
-    const closing = stockData.closingStock?.[product.name] || 0;
-    
-    // Calculate sales: Sales = Opening + Restocking - Closing
-    const sales = opening + restocking - closing;
-    const cash = sales * product.sales;
-    totalCash += cash;
-
-    const row = document.createElement('tr');
-    const isReadOnly = currentUserData.role === 'manager_view';
-    
-    row.innerHTML = `
-      <td>${product.name}</td>
-      <td><input type="number" value="${opening}" readonly class="stock-input opening-stock" data-product="${product.name}"></td>
-      <td><input type="number" value="${restocking}" ${isReadOnly ? 'readonly' : ''} class="stock-input restocking" data-product="${product.name}" min="0"></td>
-      <td><input type="number" value="${closing}" ${isReadOnly ? 'readonly' : ''} class="stock-input closing-stock" data-product="${product.name}" min="0"></td>
-      <td class="sales-display">${sales}</td>
-      <td class="cash-display">KSh ${cash.toLocaleString()}</td>
-    `;
-    tbody.appendChild(row);
-  });
-
-  // Update total
-  document.getElementById('total-cash-display').textContent = `KSh ${totalCash.toLocaleString()}`;
-
-  // Add change listeners to recalculate
-  document.querySelectorAll('.restocking, .closing-stock').forEach(input => {
-    input.addEventListener('input', recalculateStockTable);
-  });
-}
-
-// Recalculate stock table
-function recalculateStockTable() {
-  let totalCash = 0;
-  
-  PRODUCTS.forEach(product => {
-    const openingInput = document.querySelector(`.opening-stock[data-product="${product.name}"]`);
-    const restockingInput = document.querySelector(`.restocking[data-product="${product.name}"]`);
-    const closingInput = document.querySelector(`.closing-stock[data-product="${product.name}"]`);
-    
-    const opening = parseFloat(openingInput.value) || 0;
-    const restocking = parseFloat(restockingInput.value) || 0;
-    const closing = parseFloat(closingInput.value) || 0;
-    
-    const sales = opening + restocking - closing;
-    const cash = sales * product.sales;
-    totalCash += cash;
-    
-    const row = closingInput.closest('tr');
-    row.querySelector('.sales-display').textContent = sales;
-    row.querySelector('.cash-display').textContent = `KSh ${cash.toLocaleString()}`;
   });
   
-  document.getElementById('total-cash-display').textContent = `KSh ${totalCash.toLocaleString()}`;
-}
-
-// Save stock data
-async function saveStockData() {
-  if (currentUserData.role === 'manager_view') {
-    showError('You do not have permission to edit stock data');
-    return;
-  }
-
-  const selectedShop = document.getElementById('shop-selector').value;
-  const selectedDate = document.getElementById('stock-date').value;
-
-  if (!selectedShop || !selectedDate) {
-    showError('Please select shop and date');
-    return;
-  }
-
   try {
-    const stockData = {
-      shop: selectedShop,
-      date: selectedDate,
-      openingStock: {},
-      restocking: {},
-      closingStock: {},
-      sales: {},
-      totalCash: 0,
+    await setDoc(doc(db, 'shops', shopId, 'daily', date), {
+      stock: stockData,
+      initialized: true,
       updatedAt: Timestamp.now(),
       updatedBy: currentUser.uid
-    };
-
-    let totalCash = 0;
-
+    }, { merge: true });
+    
+    const tomorrow = new Date(date);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowDate = tomorrow.toISOString().split('T')[0];
+    
+    const tomorrowStockData = {};
     PRODUCTS.forEach(product => {
-      const opening = parseFloat(document.querySelector(`.opening-stock[data-product="${product.name}"]`).value) || 0;
-      const restocking = parseFloat(document.querySelector(`.restocking[data-product="${product.name}"]`).value) || 0;
-      const closing = parseFloat(document.querySelector(`.closing-stock[data-product="${product.name}"]`).value) || 0;
-      
-      const sales = opening + restocking - closing;
-      const cash = sales * product.sales;
-
-      stockData.openingStock[product.name] = opening;
-      stockData.restocking[product.name] = restocking;
-      stockData.closingStock[product.name] = closing;
-      stockData.sales[product.name] = sales;
-      
-      totalCash += cash;
-    });
-
-    stockData.totalCash = totalCash;
-
-    const stockRef = doc(db, 'stock', `${selectedShop}_${selectedDate}`);
-    await setDoc(stockRef, stockData);
-
-    showSuccess('Stock data saved successfully!');
-  } catch (error) {
-    console.error('Error saving stock data:', error);
-    showError('Error saving stock data');
-  }
-}
-// app.js - PART 3 OF 3
-// This is the final part
-
-// Load transactions
-async function loadTransactions(shop, date) {
-  try {
-    // Credit sales
-    const creditQuery = query(
-      collection(db, 'creditSales'),
-      where('shop', '==', shop),
-      where('date', '==', date)
-    );
-    const creditDocs = await getDocs(creditQuery);
-    renderCreditSales(creditDocs);
-
-    // Prepayments
-    const prepayQuery = query(
-      collection(db, 'prepayments'),
-      where('shop', '==', shop),
-      where('date', '==', date)
-    );
-    const prepayDocs = await getDocs(prepayQuery);
-    renderPrepayments(prepayDocs);
-
-    // Debt payments
-    const debtQuery = query(
-      collection(db, 'debtPayments'),
-      where('shop', '==', shop),
-      where('date', '==', date)
-    );
-    const debtDocs = await getDocs(debtQuery);
-    renderDebtPayments(debtDocs);
-
-    // Feed releases
-    const releaseQuery = query(
-      collection(db, 'feedReleases'),
-      where('shop', '==', shop),
-      where('date', '==', date)
-    );
-    const releaseDocs = await getDocs(releaseQuery);
-    renderFeedReleases(releaseDocs);
-
-    // Transfers
-    const transferQuery = query(
-      collection(db, 'transfers'),
-      where('fromShop', '==', shop),
-      where('date', '==', date)
-    );
-    const transferDocs = await getDocs(transferQuery);
-    renderTransfers(transferDocs);
-
-    // Clients
-    const clientQuery = query(
-      collection(db, 'clients'),
-      where('shop', '==', shop),
-      where('date', '==', date)
-    );
-    const clientDocs = await getDocs(clientQuery);
-    renderClients(clientDocs);
-
-  } catch (error) {
-    console.error('Error loading transactions:', error);
-  }
-}
-
-// Render functions for each transaction type
-function renderCreditSales(docs) {
-  const tbody = document.getElementById('credit-sales-list');
-  tbody.innerHTML = '';
-  docs.forEach(doc => {
-    const data = doc.data();
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${data.clientName}</td>
-      <td>${data.feedType}</td>
-      <td>${data.bags}</td>
-      <td>KSh ${data.totalAmount.toLocaleString()}</td>
-      <td>KSh ${data.paidAmount.toLocaleString()}</td>
-      <td>KSh ${data.remainingAmount.toLocaleString()}</td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-function renderPrepayments(docs) {
-  const tbody = document.getElementById('prepayments-list');
-  tbody.innerHTML = '';
-  docs.forEach(doc => {
-    const data = doc.data();
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${data.clientName}</td>
-      <td>${data.feedType}</td>
-      <td>${data.totalBags}</td>
-      <td>KSh ${data.amountPaid.toLocaleString()}</td>
-      <td>${data.remainingBags}</td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-function renderDebtPayments(docs) {
-  const tbody = document.getElementById('debt-payments-list');
-  tbody.innerHTML = '';
-  docs.forEach(doc => {
-    const data = doc.data();
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${data.clientName}</td>
-      <td>KSh ${data.amountPaid.toLocaleString()}</td>
-      <td>${data.paymentMethod}</td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-function renderFeedReleases(docs) {
-  const tbody = document.getElementById('feed-releases-list');
-  tbody.innerHTML = '';
-  docs.forEach(doc => {
-    const data = doc.data();
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${data.clientName}</td>
-      <td>${data.feedType}</td>
-      <td>${data.bags}</td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-function renderTransfers(docs) {
-  const tbody = document.getElementById('transfers-list');
-  tbody.innerHTML = '';
-  docs.forEach(doc => {
-    const data = doc.data();
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${data.toShop}</td>
-      <td>${data.feedType}</td>
-      <td>${data.bags}</td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-function renderClients(docs) {
-  const tbody = document.getElementById('clients-list');
-  tbody.innerHTML = '';
-  docs.forEach(doc => {
-    const data = doc.data();
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${data.clientName}</td>
-      <td>${data.feedType}</td>
-      <td>${data.bags}</td>
-      <td>KSh ${data.totalAmount.toLocaleString()}</td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-// Save functions with individual save buttons
-async function saveCreditSale() {
-  if (currentUserData.role === 'manager_view') {
-    showError('You do not have permission to add transactions');
-    return;
-  }
-
-  const clientName = document.getElementById('credit-client-name').value;
-  const feedType = document.getElementById('credit-feed-type').value;
-  const bags = parseFloat(document.getElementById('credit-bags').value);
-  const paidAmount = parseFloat(document.getElementById('credit-paid').value);
-
-  if (!clientName || !feedType || !bags || isNaN(paidAmount)) {
-    showError('Please fill all fields');
-    return;
-  }
-
-  const product = PRODUCTS.find(p => p.name === feedType);
-  const totalAmount = bags * product.sales;
-  const remainingAmount = totalAmount - paidAmount;
-
-  try {
-    await addDoc(collection(db, 'creditSales'), {
-      shop: currentShop,
-      date: document.getElementById('stock-date').value,
-      clientName,
-      feedType,
-      bags,
-      totalAmount,
-      paidAmount,
-      remainingAmount,
-      status: remainingAmount > 0 ? 'pending' : 'paid',
-      createdAt: Timestamp.now(),
-      createdBy: currentUser.uid
-    });
-
-    showSuccess('Credit sale saved!');
-    document.getElementById('credit-client-name').value = '';
-    document.getElementById('credit-bags').value = '';
-    document.getElementById('credit-paid').value = '';
-    loadTransactions(currentShop, document.getElementById('stock-date').value);
-  } catch (error) {
-    console.error('Error saving credit sale:', error);
-    showError('Error saving credit sale');
-  }
-}
-
-async function savePrepayment() {
-  if (currentUserData.role === 'manager_view') {
-    showError('You do not have permission to add transactions');
-    return;
-  }
-
-  const clientName = document.getElementById('prepay-client-name').value;
-  const feedType = document.getElementById('prepay-feed-type').value;
-  const amountPaid = parseFloat(document.getElementById('prepay-amount').value);
-
-  if (!clientName || !feedType || !amountPaid) {
-    showError('Please fill all fields');
-    return;
-  }
-
-  const product = PRODUCTS.find(p => p.name === feedType);
-  const totalBags = Math.floor(amountPaid / product.sales);
-
-  try {
-    await addDoc(collection(db, 'prepayments'), {
-      shop: currentShop,
-      date: document.getElementById('stock-date').value,
-      clientName,
-      feedType,
-      amountPaid,
-      totalBags,
-      remainingBags: totalBags,
-      status: 'pending',
-      createdAt: Timestamp.now(),
-      createdBy: currentUser.uid
-    });
-
-    showSuccess('Prepayment saved!');
-    document.getElementById('prepay-client-name').value = '';
-    document.getElementById('prepay-amount').value = '';
-    loadTransactions(currentShop, document.getElementById('stock-date').value);
-  } catch (error) {
-    console.error('Error saving prepayment:', error);
-    showError('Error saving prepayment');
-  }
-}
-
-async function saveDebtPayment() {
-  if (currentUserData.role === 'manager_view') {
-    showError('You do not have permission to add transactions');
-    return;
-  }
-
-  const clientName = document.getElementById('debt-client-name').value;
-  const amountPaid = parseFloat(document.getElementById('debt-amount').value);
-  const paymentMethod = document.getElementById('debt-method').value;
-
-  if (!clientName || !amountPaid || !paymentMethod) {
-    showError('Please fill all fields');
-    return;
-  }
-
-  try {
-    await addDoc(collection(db, 'debtPayments'), {
-      shop: currentShop,
-      date: document.getElementById('stock-date').value,
-      clientName,
-      amountPaid,
-      paymentMethod,
-      createdAt: Timestamp.now(),
-      createdBy: currentUser.uid
-    });
-
-    showSuccess('Debt payment saved!');
-    document.getElementById('debt-client-name').value = '';
-    document.getElementById('debt-amount').value = '';
-    loadTransactions(currentShop, document.getElementById('stock-date').value);
-  } catch (error) {
-    console.error('Error saving debt payment:', error);
-    showError('Error saving debt payment');
-  }
-}
-
-async function saveFeedRelease() {
-  if (currentUserData.role === 'manager_view') {
-    showError('You do not have permission to add transactions');
-    return;
-  }
-
-  const clientName = document.getElementById('release-client-name').value;
-  const feedType = document.getElementById('release-feed-type').value;
-  const bags = parseFloat(document.getElementById('release-bags').value);
-
-  if (!clientName || !feedType || !bags) {
-    showError('Please fill all fields');
-    return;
-  }
-
-  try {
-    await addDoc(collection(db, 'feedReleases'), {
-      shop: currentShop,
-      date: document.getElementById('stock-date').value,
-      clientName,
-      feedType,
-      bags,
-      createdAt: Timestamp.now(),
-      createdBy: currentUser.uid
-    });
-
-    showSuccess('Feed release saved!');
-    document.getElementById('release-client-name').value = '';
-    document.getElementById('release-bags').value = '';
-    loadTransactions(currentShop, document.getElementById('stock-date').value);
-  } catch (error) {
-    console.error('Error saving feed release:', error);
-    showError('Error saving feed release');
-  }
-}
-
-async function saveTransfer() {
-  if (currentUserData.role === 'manager_view') {
-    showError('You do not have permission to add transactions');
-    return;
-  }
-
-  const toShop = document.getElementById('transfer-to-shop').value;
-  const feedType = document.getElementById('transfer-feed-type').value;
-  const bags = parseFloat(document.getElementById('transfer-bags').value);
-
-  if (!toShop || !feedType || !bags) {
-    showError('Please fill all fields');
-    return;
-  }
-
-  try {
-    await addDoc(collection(db, 'transfers'), {
-      fromShop: currentShop,
-      toShop,
-      date: document.getElementById('stock-date').value,
-      feedType,
-      bags,
-      createdAt: Timestamp.now(),
-      createdBy: currentUser.uid
-    });
-
-    showSuccess('Transfer saved!');
-    document.getElementById('transfer-bags').value = '';
-    loadTransactions(currentShop, document.getElementById('stock-date').value);
-  } catch (error) {
-    console.error('Error saving transfer:', error);
-    showError('Error saving transfer');
-  }
-}
-
-async function saveClient() {
-  if (currentUserData.role === 'manager_view') {
-    showError('You do not have permission to add transactions');
-    return;
-  }
-
-  const clientName = document.getElementById('client-name').value;
-  const feedType = document.getElementById('client-feed-type').value;
-  const bags = parseFloat(document.getElementById('client-bags').value);
-
-  if (!clientName || !feedType || !bags) {
-    showError('Please fill all fields');
-    return;
-  }
-
-  const product = PRODUCTS.find(p => p.name === feedType);
-  const totalAmount = bags * product.sales;
-
-  try {
-    await addDoc(collection(db, 'clients'), {
-      shop: currentShop,
-      date: document.getElementById('stock-date').value,
-      clientName,
-      feedType,
-      bags,
-      totalAmount,
-      createdAt: Timestamp.now(),
-      createdBy: currentUser.uid
-    });
-
-    showSuccess('Client details saved!');
-    document.getElementById('client-name').value = '';
-    document.getElementById('client-bags').value = '';
-    loadTransactions(currentShop, document.getElementById('stock-date').value);
-  } catch (error) {
-    console.error('Error saving client details:', error);
-    showError('Error saving client details');
-  }
-}
-
-// Load stock value page with detailed breakdown
-async function loadStockValuePage() {
-  try {
-    let shopsStockValue = 0;
-    let debtorsValue = 0;
-    let creditorsValue = 0;
-
-    const today = new Date().toISOString().split('T')[0];
-
-    for (const shop of SHOPS) {
-      // Check access
-      if (currentUserData.role === 'attendant' && currentUserData.assignedShop !== shop) {
-        continue;
-      }
-
-      // Calculate shops stock value
-      const stockRef = doc(db, 'stock', `${shop}_${today}`);
-      const stockDoc = await getDoc(stockRef);
-      
-      if (stockDoc.exists()) {
-        const stockData = stockDoc.data();
-        PRODUCTS.forEach(product => {
-          const closing = stockData.closingStock?.[product.name] || 0;
-          shopsStockValue += closing * product.cost;
-        });
-      }
-
-      // Calculate debtors value (money owed to us)
-      const creditQuery = query(
-        collection(db, 'creditSales'),
-        where('shop', '==', shop),
-        where('status', '==', 'pending')
-      );
-      const creditDocs = await getDocs(creditQuery);
-      creditDocs.forEach(doc => {
-        debtorsValue += doc.data().remainingAmount || 0;
-      });
-
-      // Calculate creditors value (feeds we owe)
-      const prepayQuery = query(
-        collection(db, 'prepayments'),
-        where('shop', '==', shop),
-        where('status', '==', 'pending')
-      );
-      const prepayDocs = await getDocs(prepayQuery);
-      prepayDocs.forEach(doc => {
-        const data = doc.data();
-        const product = PRODUCTS.find(p => p.name === data.feedType);
-        if (product) {
-          creditorsValue += (data.remainingBags || 0) * product.cost;
-        }
-      });
-    }
-
-    // Calculate net stock value
-    const netStockValue = shopsStockValue + debtorsValue - creditorsValue;
-
-    // Display breakdown
-    const breakdownHtml = `
-      <div class="stock-value-breakdown">
-        <div class="value-item">
-          <h3>Debtors Value</h3>
-          <p class="value-amount">KSh ${debtorsValue.toLocaleString()}</p>
-          <p class="value-desc">Money owed to us from credit sales</p>
-        </div>
-        
-        <div class="value-item">
-          <h3>Shops Stock Value</h3>
-          <p class="value-amount">KSh ${shopsStockValue.toLocaleString()}</p>
-          <p class="value-desc">Physical stock in all shops (at cost price)</p>
-        </div>
-        
-        <div class="value-item">
-          <h3>Creditors Value</h3>
-          <p class="value-amount negative">KSh ${creditorsValue.toLocaleString()}</p>
-          <p class="value-desc">Feeds we owe to prepaid clients (at cost price)</p>
-        </div>
-        
-        <div class="value-formula">
-          <h3>Formula</h3>
-          <p>Net Stock Value = Stock in Shops + Debtors - Creditors</p>
-          <p>Net Stock Value = ${shopsStockValue.toLocaleString()} + ${debtorsValue.toLocaleString()} - ${creditorsValue.toLocaleString()}</p>
-        </div>
-        
-        <div class="value-item net-value">
-          <h3>Net Stock Value</h3>
-          <p class="value-amount final">KSh ${netStockValue.toLocaleString()}</p>
-          <p class="value-desc">Total business value after all obligations</p>
-        </div>
-      </div>
-    `;
-
-    document.getElementById('stock-value-content').innerHTML = breakdownHtml;
-
-  } catch (error) {
-    console.error('Error loading stock value:', error);
-    showError('Error loading stock value');
-  }
-}
-
-// Load reports page
-function loadReportsPage() {
-  // Placeholder for reports
-  document.getElementById('reports-content').innerHTML = `
-    <p>Select date range and shop to generate reports</p>
-  `;
-}
-
-// Replace the exportDoc1() and exportDoc2() functions in app.js Part 3 with these:
-
-// Helper function to format date as "19th JAN 2026"
-function formatDateForPDF(dateString) {
-  const date = new Date(dateString);
-  const day = date.getDate();
-  const month = date.toLocaleString('en-US', { month: 'short' }).toUpperCase();
-  const year = date.getFullYear();
-  
-  // Add ordinal suffix (st, nd, rd, th)
-  let suffix = 'th';
-  if (day === 1 || day === 21 || day === 31) suffix = 'st';
-  else if (day === 2 || day === 22) suffix = 'nd';
-  else if (day === 3 || day === 23) suffix = 'rd';
-  
-  return `${day}${suffix} ${month} ${year}`;
-}
-
-// DOC1 EXPORT - Individual Shop Reports (All shops in one PDF)
-async function exportDoc1() {
-  try {
-    const { jsPDF } = window.jspdf;
-    if (!jsPDF) {
-      showError('PDF library not loaded. Please refresh the page.');
-      return;
-    }
-
-    const selectedDate = document.getElementById('stock-date').value;
-    if (!selectedDate) {
-      showError('Please select a date first');
-      return;
-    }
-
-    const pdf = new jsPDF();
-    const formattedDate = formatDateForPDF(selectedDate);
-    let isFirstPage = true;
-
-    // Get all shops data
-    for (const shop of SHOPS) {
-      // Skip if attendant and not their shop
-      if (currentUserData.role === 'attendant' && currentUserData.assignedShop !== shop) {
-        continue;
-      }
-
-      // Add new page for each shop (except first)
-      if (!isFirstPage) {
-        pdf.addPage();
-      }
-      isFirstPage = false;
-
-      // Get stock data
-      const stockRef = doc(db, 'stock', `${shop}_${selectedDate}`);
-      const stockDoc = await getDoc(stockRef);
-
-      let stockData = {
-        openingStock: {},
-        restocking: {},
-        closingStock: {},
-        sales: {},
-        totalCash: 0
+      tomorrowStockData[product.id] = {
+        opening: stockData[product.id].closing,
+        restocking: 0,
+        closing: 0,
+        discount: 0,
+        sellingPrice: product.salesPrice
       };
-
-      if (stockDoc.exists()) {
-        stockData = stockDoc.data();
-      }
-
-      // Shop Header
-      pdf.setFontSize(14);
-      pdf.setFont(undefined, 'bold');
-      pdf.text(`${shop.toUpperCase()} SHOP`, 105, 15, { align: 'center' });
-      pdf.setFontSize(12);
-      pdf.text(formattedDate, 105, 23, { align: 'center' });
-      pdf.setFont(undefined, 'normal');
-      pdf.setFontSize(11);
-      pdf.text('TOTAL STOCK VALUE AND SALES', 105, 30, { align: 'center' });
-
-      // Table Headers
-      let y = 45;
-      pdf.setFontSize(9);
-      pdf.setFont(undefined, 'bold');
-      
-      // Column positions
-      const cols = {
-        no: 10,
-        product: 20,
-        opening: 70,
-        closing: 95,
-        cost: 115,
-        sales: 135,
-        salesQty: 155,
-        salesAmt: 175,
-        stockVal: 195
-      };
-
-      // Headers
-      pdf.text('', cols.no, y);
-      pdf.text('Product', cols.product, y);
-      pdf.text('Opening Stock', cols.opening, y);
-      pdf.text('Closing Stock', cols.closing, y);
-      pdf.text('Cost Price', cols.cost, y);
-      pdf.text('Sales', cols.sales, y);
-      pdf.text('Quantity', cols.opening, y + 5);
-      pdf.text('Quantity', cols.closing, y + 5);
-      pdf.text('Sales', cols.salesQty, y);
-      pdf.text('Sales amt', cols.salesAmt, y);
-      pdf.text('Stock Value', cols.stockVal, y);
-
-      pdf.setFont(undefined, 'normal');
-      y += 12;
-
-      // Data rows
-      let totalOpeningBags = 0;
-      let totalClosingBags = 0;
-      let totalSalesQty = 0;
-      let totalSalesAmt = 0;
-      let totalStockValue = 0;
-
-      PRODUCTS.forEach((product, index) => {
-        const opening = stockData.openingStock?.[product.name] || 0;
-        const restocking = stockData.restocking?.[product.name] || 0;
-        const closing = stockData.closingStock?.[product.name] || 0;
-        const salesQty = opening + restocking - closing;
-        const salesAmt = salesQty * product.sales;
-        const stockValue = closing * product.cost;
-
-        totalOpeningBags += opening;
-        totalClosingBags += closing;
-        totalSalesQty += salesQty;
-        totalSalesAmt += salesAmt;
-        totalStockValue += stockValue;
-
-        pdf.text((index + 1).toString(), cols.no, y);
-        pdf.text(product.name, cols.product, y);
-        pdf.text(opening.toString(), cols.opening, y);
-        pdf.text(closing.toString(), cols.closing, y);
-        pdf.text(product.cost.toLocaleString(), cols.cost, y);
-        pdf.text(product.sales.toLocaleString(), cols.sales, y);
-        pdf.text(salesQty.toString(), cols.salesQty, y);
-        pdf.text(salesAmt.toLocaleString(), cols.salesAmt, y);
-        pdf.text(stockValue.toLocaleString(), cols.stockVal, y);
-
-        y += 7;
-      });
-
-      // Totals row
-      y += 3;
-      pdf.setFont(undefined, 'bold');
-      pdf.text(totalOpeningBags.toString(), cols.opening, y);
-      pdf.text(totalClosingBags.toString(), cols.closing, y);
-      pdf.text(totalSalesQty.toString(), cols.salesQty, y);
-      pdf.text(totalSalesAmt.toLocaleString(), cols.salesAmt, y);
-      pdf.text(totalStockValue.toLocaleString(), cols.stockVal, y);
-    }
-
-    // Summary Page - All Shops
-    pdf.addPage();
-    pdf.setFontSize(14);
-    pdf.setFont(undefined, 'bold');
-    pdf.text('SHOPS SUMMARY TOTALS', 105, 15, { align: 'center' });
-    pdf.setFontSize(12);
-    pdf.text(`SHOPS TOTALS ${formattedDate}`, 105, 23, { align: 'center' });
-
-    let y = 40;
-    pdf.setFontSize(10);
+    });
     
-    // Summary table headers
-    pdf.text('INDEX', 15, y);
-    pdf.text('DATE', 35, y);
-    pdf.text('SHOP', 70, y);
-    pdf.text('BAGS', 120, y);
-    pdf.text('BAGS SOLD', 145, y);
-    pdf.text('SALES AMOUNT', 175, y);
-
-    pdf.setFont(undefined, 'normal');
-    y += 8;
-
-    let grandTotalBags = 0;
-    let grandTotalSold = 0;
-    let grandTotalSales = 0;
-
-    // Get summary data for each shop
-    let shopIndex = 1;
-    for (const shop of SHOPS) {
-      if (currentUserData.role === 'attendant' && currentUserData.assignedShop !== shop) {
-        continue;
-      }
-
-      const stockRef = doc(db, 'stock', `${shop}_${selectedDate}`);
-      const stockDoc = await getDoc(stockRef);
-
-      let totalBags = 0;
-      let totalSold = 0;
-      let totalSales = 0;
-
-      if (stockDoc.exists()) {
-        const stockData = stockDoc.data();
-        
-        PRODUCTS.forEach(product => {
-          const opening = stockData.openingStock?.[product.name] || 0;
-          const restocking = stockData.restocking?.[product.name] || 0;
-          const closing = stockData.closingStock?.[product.name] || 0;
-          const sold = opening + restocking - closing;
-          
-          totalBags += opening;
-          totalSold += sold;
-          totalSales += sold * product.sales;
-        });
-      }
-
-      grandTotalBags += totalBags;
-      grandTotalSold += totalSold;
-      grandTotalSales += totalSales;
-
-      const dateFormatted = new Date(selectedDate).toLocaleDateString('en-GB');
-      pdf.text(shopIndex.toString(), 15, y);
-      pdf.text(dateFormatted, 35, y);
-      pdf.text(shop, 70, y);
-      pdf.text(totalBags.toString(), 120, y);
-      pdf.text(totalSold.toString(), 145, y);
-      pdf.text(totalSales.toLocaleString(), 175, y);
-
-      y += 7;
-      shopIndex++;
-    }
-
-    // Grand total
-    y += 5;
-    pdf.setFont(undefined, 'bold');
-    pdf.setFontSize(12);
-    pdf.text('TOTAL SALES', 70, y);
-    pdf.text(grandTotalSales.toLocaleString(), 175, y);
-
-    // Save PDF
-    pdf.save(`YFarmers Stock Report as at ${formattedDate}.pdf`);
-    showSuccess('Stock Report exported successfully!');
-
+    await setDoc(doc(db, 'shops', shopId, 'daily', tomorrowDate), {
+      stock: tomorrowStockData,
+      initialized: false
+    }, { merge: true });
+    
+    showToast('Closing stock saved successfully!');
+    loadShopData(shopId, date);
   } catch (error) {
-    console.error('Error exporting Doc1:', error);
-    showError('Error exporting PDF: ' + error.message);
+    showToast('Error saving data: ' + error.message);
   }
 }
 
-// DOC2 EXPORT - Stock Value Book (Financial Summary)
-async function exportDoc2() {
+async function saveCreditSale(shopId, date) {
+  const name = document.getElementById('debtor-name').value;
+  const feed = document.getElementById('debtor-feed').value;
+  const bags = parseInt(document.getElementById('debtor-bags').value);
+  const discount = parseInt(document.getElementById('debtor-discount').value) || 0;
+  
+  if (!name || !feed || !bags) {
+    showToast('Please fill all fields');
+    return;
+  }
+  
+  const product = PRODUCTS.find(p => p.id === feed);
+  const amount = (product.salesPrice - discount) * bags;
+  
   try {
-    const { jsPDF } = window.jspdf;
-    if (!jsPDF) {
-      showError('PDF library not loaded. Please refresh the page.');
-      return;
+    await addDoc(collection(db, 'shops', shopId, 'daily', date, 'creditSales'), {
+      debtorName: name,
+      feed: feed,
+      feedName: product.name,
+      bags: bags,
+      discount: discount,
+      amount: amount,
+      createdAt: Timestamp.now()
+    });
+    
+    showToast('Credit sale saved!');
+    clearCreditSaleForm();
+    loadShopData(shopId, date);
+  } catch (error) {
+    showToast('Error: ' + error.message);
+  }
+}
+
+function clearCreditSaleForm() {
+  document.getElementById('debtor-name').value = '';
+  document.getElementById('debtor-feed').value = '';
+  document.getElementById('debtor-bags').value = '';
+  document.getElementById('debtor-discount').value = '0';
+}
+
+async function savePrepayment(shopId, date) {
+  const name = document.getElementById('prepayment-name').value;
+  const amount = parseInt(document.getElementById('prepayment-amount').value);
+  
+  if (!name || !amount) {
+    showToast('Please fill all fields');
+    return;
+  }
+  
+  try {
+    await addDoc(collection(db, 'shops', shopId, 'daily', date, 'prepayments'), {
+      clientName: name,
+      amount: amount,
+      createdAt: Timestamp.now()
+    });
+    
+    showToast('Prepayment saved!');
+    clearPrepaymentForm();
+    loadShopData(shopId, date);
+  } catch (error) {
+    showToast('Error: ' + error.message);
+  }
+}
+
+function clearPrepaymentForm() {
+  document.getElementById('prepayment-name').value = '';
+  document.getElementById('prepayment-amount').value = '';
+}
+
+async function saveDebtPayment(shopId, date) {
+  const debtor = document.getElementById('debt-payment-debtor').value;
+  const amount = parseInt(document.getElementById('debt-payment-amount').value);
+  
+  if (!debtor || !amount) {
+    showToast('Please fill all fields');
+    return;
+  }
+  
+  try {
+    await addDoc(collection(db, 'shops', shopId, 'daily', date, 'debtPayments'), {
+      debtorName: debtor,
+      amount: amount,
+      createdAt: Timestamp.now()
+    });
+    
+    showToast('Debt payment saved!');
+    clearDebtPaymentForm();
+    loadShopData(shopId, date);
+  } catch (error) {
+    showToast('Error: ' + error.message);
+  }
+}
+
+function clearDebtPaymentForm() {
+  document.getElementById('debt-payment-debtor').value = '';
+  document.getElementById('debt-payment-amount').value = '';
+}
+
+async function saveCreditorRelease(shopId, date) {
+  const creditor = document.getElementById('creditor-name').value;
+  const feed = document.getElementById('creditor-feed').value;
+  const bags = parseInt(document.getElementById('creditor-bags').value);
+  
+  if (!creditor || !feed || !bags) {
+    showToast('Please fill all fields');
+    return;
+  }
+  
+  const product = PRODUCTS.find(p => p.id === feed);
+  
+  try {
+    await addDoc(collection(db, 'shops', shopId, 'daily', date, 'creditorReleases'), {
+      creditorName: creditor,
+      feed: feed,
+      feedName: product.name,
+      bags: bags,
+      createdAt: Timestamp.now()
+    });
+    
+    showToast('Feeds released!');
+    clearCreditorReleaseForm();
+    loadShopData(shopId, date);
+  } catch (error) {
+    showToast('Error: ' + error.message);
+  }
+}
+
+function clearCreditorReleaseForm() {
+  document.getElementById('creditor-name').value = '';
+  document.getElementById('creditor-feed').value = '';
+  document.getElementById('creditor-bags').value = '';
+}
+
+async function saveTransfer(shopId, date) {
+  const feed = document.getElementById('transfer-feed').value;
+  const bags = parseInt(document.getElementById('transfer-bags').value);
+  const destination = document.getElementById('transfer-destination').value;
+  
+  if (!feed || !bags || !destination) {
+    showToast('Please fill all fields');
+    return;
+  }
+  
+  const product = PRODUCTS.find(p => p.id === feed);
+  
+  try {
+    await addDoc(collection(db, 'shops', shopId, 'daily', date, 'transfers'), {
+      feed: feed,
+      feedName: product.name,
+      bags: bags,
+      destination: destination,
+      destinationName: SHOPS.find(s => s.id === destination).name,
+      createdAt: Timestamp.now()
+    });
+    
+    showToast('Transfer saved!');
+    clearTransferForm();
+    loadShopData(shopId, date);
+  } catch (error) {
+    showToast('Error: ' + error.message);
+  }
+}
+
+function clearTransferForm() {
+  document.getElementById('transfer-feed').value = '';
+  document.getElementById('transfer-bags').value = '';
+  document.getElementById('transfer-destination').value = '';
+}
+
+async function saveClient(shopId, date) {
+  const name = document.getElementById('client-name').value;
+  const phone = document.getElementById('client-phone').value;
+  const feed = document.getElementById('client-feed').value;
+  const bags = parseInt(document.getElementById('client-bags').value);
+  const amount = parseInt(document.getElementById('client-amount').value);
+  
+  if (!name || !phone || !feed || !bags || !amount) {
+    showToast('Please fill all fields');
+    return;
+  }
+  
+  const product = PRODUCTS.find(p => p.id === feed);
+  
+  try {
+    await addDoc(collection(db, 'shops', shopId, 'daily', date, 'clients'), {
+      name: name,
+      phone: phone,
+      feed: feed,
+      feedName: product.name,
+      bags: bags,
+      amount: amount,
+      createdAt: Timestamp.now()
+    });
+    
+    showToast('Client saved!');
+    clearClientForm();
+    loadShopData(shopId, date);
+  } catch (error) {
+    showToast('Error: ' + error.message);
+  }
+}
+
+function clearClientForm() {
+  document.getElementById('client-name').value = '';
+  document.getElementById('client-phone').value = '';
+  document.getElementById('client-feed').value = '';
+  document.getElementById('client-bags').value = '';
+  document.getElementById('client-amount').value = '';
+}
+function renderManagerShopView(shopId, date, stockData) {
+  let html = '<div class="summary-card">';
+  html += '<h2>Stock Report</h2>';
+  html += '<table>';
+  html += '<thead><tr><th>#</th><th>Product</th><th>Opening</th><th>Restocking</th><th>Closing</th><th>Cost Price</th><th>Sales Price</th><th>Sales</th><th>Sales Amt</th><th>Stock Value</th></tr></thead>';
+  html += '<tbody>';
+  
+  let totalSales = 0;
+  let totalStockValue = 0;
+  
+  PRODUCTS.forEach((product, index) => {
+    const stock = stockData.stock[product.id] || { opening: 0, restocking: 0, closing: 0, discount: 0 };
+    const sales = stock.opening + stock.restocking - stock.closing;
+    const salesAmt = sales * (product.salesPrice - stock.discount);
+    const stockValue = stock.closing * product.costPrice;
+    
+    totalSales += salesAmt;
+    totalStockValue += stockValue;
+    
+    html += `<tr>`;
+    html += `<td>${index + 1}</td>`;
+    html += `<td>${product.name}</td>`;
+    html += `<td>${stock.opening}</td>`;
+    html += `<td>${stock.restocking}</td>`;
+    html += `<td>${stock.closing}</td>`;
+    html += `<td>${product.costPrice}</td>`;
+    html += `<td>${product.salesPrice - stock.discount}</td>`;
+    html += `<td>${sales}</td>`;
+    html += `<td>${salesAmt.toLocaleString()}</td>`;
+    html += `<td>${stockValue.toLocaleString()}</td>`;
+    html += `</tr>`;
+  });
+  
+  html += `<tr><td colspan="8"><strong>TOTAL</strong></td><td><strong>${totalSales.toLocaleString()}</strong></td><td><strong>${totalStockValue.toLocaleString()}</strong></td></tr>`;
+  html += '</tbody></table></div>';
+  
+  if (stockData.clients && stockData.clients.length > 0) {
+    html += '<div class="summary-card"><h2>Clients</h2><table>';
+    html += '<thead><tr><th>Name</th><th>Phone</th><th>Feed</th><th>Bags</th><th>Amount</th></tr></thead><tbody>';
+    stockData.clients.forEach(client => {
+      html += `<tr><td>${client.name}</td><td>${client.phone}</td><td>${client.feedName}</td><td>${client.bags}</td><td>${client.amount.toLocaleString()}</td></tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+  
+  if (stockData.creditSales && stockData.creditSales.length > 0) {
+    html += '<div class="summary-card"><h2>Credit Sales</h2><table>';
+    html += '<thead><tr><th>Debtor</th><th>Feed</th><th>Bags</th><th>Amount</th></tr></thead><tbody>';
+    stockData.creditSales.forEach(sale => {
+      html += `<tr><td>${sale.debtorName}</td><td>${sale.feedName}</td><td>${sale.bags}</td><td>${sale.amount.toLocaleString()}</td></tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+  
+  return html;
+}
+
+async function getShopStock(shopId, date) {
+  const docRef = doc(db, 'shops', shopId, 'daily', date);
+  const docSnap = await getDoc(docRef);
+  
+  const data = {
+    stock: {},
+    initialized: false,
+    clients: [],
+    creditSales: [],
+    prepayments: [],
+    debtPayments: [],
+    creditorReleases: [],
+    transfers: [],
+    debtors: [],
+    creditors: []
+  };
+  
+  if (docSnap.exists()) {
+    const docData = docSnap.data();
+    data.stock = docData.stock || {};
+    data.initialized = docData.initialized || false;
+  }
+  
+  const clientsSnap = await getDocs(collection(db, 'shops', shopId, 'daily', date, 'clients'));
+  clientsSnap.forEach(doc => data.clients.push(doc.data()));
+  
+  const creditSalesSnap = await getDocs(collection(db, 'shops', shopId, 'daily', date, 'creditSales'));
+  creditSalesSnap.forEach(doc => {
+    const saleData = doc.data();
+    data.creditSales.push(saleData);
+    if (!data.debtors.find(d => d.name === saleData.debtorName)) {
+      data.debtors.push({ name: saleData.debtorName });
     }
-
-    const selectedDate = document.getElementById('stock-date').value;
-    if (!selectedDate) {
-      showError('Please select a date first');
-      return;
+  });
+  
+  const prepaymentsSnap = await getDocs(collection(db, 'shops', shopId, 'daily', date, 'prepayments'));
+  prepaymentsSnap.forEach(doc => {
+    const prepayData = doc.data();
+    data.prepayments.push(prepayData);
+    if (!data.creditors.find(c => c.name === prepayData.clientName)) {
+      data.creditors.push({ name: prepayData.clientName });
     }
+  });
+  
+  const debtPaymentsSnap = await getDocs(collection(db, 'shops', shopId, 'daily', date, 'debtPayments'));
+  debtPaymentsSnap.forEach(doc => data.debtPayments.push(doc.data()));
+  
+  const creditorReleasesSnap = await getDocs(collection(db, 'shops', shopId, 'daily', date, 'creditorReleases'));
+  creditorReleasesSnap.forEach(doc => data.creditorReleases.push(doc.data()));
+  
+  const transfersSnap = await getDocs(collection(db, 'shops', shopId, 'daily', date, 'transfers'));
+  transfersSnap.forEach(doc => data.transfers.push(doc.data()));
+  
+  return data;
+}
 
-    const pdf = new jsPDF();
-    const formattedDate = formatDateForPDF(selectedDate);
+async function showTotalSalesView() {
+  hideAllViews();
+  document.getElementById('screen-title').textContent = 'Total Sales';
+  document.getElementById('back-btn').style.display = 'block';
+  document.getElementById('total-sales-view').style.display = 'block';
+  
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('sales-date').value = today;
+  
+  await loadTotalSalesData(today);
+}
 
-    // PAGE 1: TOTAL SALES SUMMARY
-    pdf.setFontSize(14);
-    pdf.setFont(undefined, 'bold');
-    pdf.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
-    pdf.setFontSize(12);
-    pdf.text(`TOTAL SALES AS AT ${formattedDate}`, 105, 23, { align: 'center' });
+async function loadTotalSalesData(date) {
+  const content = document.getElementById('sales-content');
+  
+  let html = '<div class="summary-card"><h2>Shop Sales Summary</h2><table>';
+  html += '<thead><tr><th>Shop</th><th>Bags</th><th>Bags Sold</th><th>Sales Amount</th></tr></thead><tbody>';
+  
+  let totalBags = 0;
+  let totalBagsSold = 0;
+  let totalSales = 0;
+  
+  for (const shop of SHOPS) {
+    const stockData = await getShopStock(shop.id, date);
+    let bags = 0;
+    let bagsSold = 0;
+    let sales = 0;
+    
+    PRODUCTS.forEach(product => {
+      const stock = stockData.stock[product.id] || { opening: 0, restocking: 0, closing: 0, discount: 0 };
+      bags += stock.closing;
+      const sold = stock.opening + stock.restocking - stock.closing;
+      bagsSold += sold;
+      sales += sold * (product.salesPrice - stock.discount);
+    });
+    
+    totalBags += bags;
+    totalBagsSold += bagsSold;
+    totalSales += sales;
+    
+    html += `<tr><td>${shop.name}</td><td>${bags}</td><td>${bagsSold}</td><td>${sales.toLocaleString()}</td></tr>`;
+  }
+  
+  html += `<tr><td><strong>TOTAL</strong></td><td><strong>${totalBags}</strong></td><td><strong>${totalBagsSold}</strong></td><td><strong>${totalSales.toLocaleString()}</strong></td></tr>`;
+  html += '</tbody></table></div>';
+  
+  content.innerHTML = html;
+}
 
-    let y = 40;
-    pdf.setFontSize(10);
-    pdf.setFont(undefined, 'normal');
+async function showDebtorsView() {
+  hideAllViews();
+  document.getElementById('screen-title').textContent = 'Debtors';
+  document.getElementById('back-btn').style.display = 'block';
+  document.getElementById('debtors-view').style.display = 'block';
+  
+  await loadDebtorsData();
+}
 
-    // Sales Summary Table
-    pdf.text('INDEX', 15, y);
-    pdf.text('DATE', 35, y);
-    pdf.text('SHOP', 70, y);
-    pdf.text('BAGS', 120, y);
-    pdf.text('BAGS SOLD', 145, y);
-    pdf.text('SALES AMOUNT', 175, y);
+async function loadDebtorsData() {
+  const content = document.getElementById('debtors-content');
+  
+  let html = '<div class="summary-card"><h2>Debtors List</h2><table>';
+  html += '<thead><tr><th>Client</th><th>Feed</th><th>Bags</th><th>Price</th><th>Amount</th><th>Shop</th><th>Date</th></tr></thead><tbody>';
+  
+  let totalAmount = 0;
+  
+  for (const shop of SHOPS) {
+    const q = query(collection(db, 'shops', shop.id, 'daily'));
+    const querySnapshot = await getDocs(q);
+    
+    for (const dateDoc of querySnapshot.docs) {
+      const date = dateDoc.id;
+      const creditSalesSnap = await getDocs(collection(db, 'shops', shop.id, 'daily', date, 'creditSales'));
+      
+      creditSalesSnap.forEach(doc => {
+        const sale = doc.data();
+        totalAmount += sale.amount;
+        html += `<tr><td>${sale.debtorName}</td><td>${sale.feedName}</td><td>${sale.bags}</td><td>${(sale.amount / sale.bags).toFixed(0)}</td><td>${sale.amount.toLocaleString()}</td><td>${shop.name}</td><td>${date}</td></tr>`;
+      });
+    }
+  }
+  
+  html += `<tr><td colspan="4"><strong>TOTAL</strong></td><td><strong>${totalAmount.toLocaleString()}</strong></td><td colspan="2"></td></tr>`;
+  html += '</tbody></table></div>';
+  
+  content.innerHTML = html;
+}
 
-    y += 8;
+async function showCreditorsView() {
+  hideAllViews();
+  document.getElementById('screen-title').textContent = 'Creditors';
+  document.getElementById('back-btn').style.display = 'block';
+  document.getElementById('creditors-view').style.display = 'block';
+  
+  await loadCreditorsData();
+}
 
+async function loadCreditorsData() {
+  const content = document.getElementById('creditors-content');
+  
+  let html = '<div class="summary-card"><h2>Creditors List</h2><table>';
+  html += '<thead><tr><th>Client</th><th>Amount Prepaid</th><th>Shop</th><th>Date</th></tr></thead><tbody>';
+  
+  let totalAmount = 0;
+  
+  for (const shop of SHOPS) {
+    const q = query(collection(db, 'shops', shop.id, 'daily'));
+    const querySnapshot = await getDocs(q);
+    
+    for (const dateDoc of querySnapshot.docs) {
+      const date = dateDoc.id;
+      const prepaymentsSnap = await getDocs(collection(db, 'shops', shop.id, 'daily', date, 'prepayments'));
+      
+      prepaymentsSnap.forEach(doc => {
+        const prepay = doc.data();
+        totalAmount += prepay.amount;
+        html += `<tr><td>${prepay.clientName}</td><td>${prepay.amount.toLocaleString()}</td><td>${shop.name}</td><td>${date}</td></tr>`;
+      });
+    }
+  }
+  
+  html += `<tr><td><strong>TOTAL</strong></td><td><strong>${totalAmount.toLocaleString()}</strong></td><td colspan="2"></td></tr>`;
+  html += '</tbody></table></div>';
+  
+  content.innerHTML = html;
+}
+
+async function showStockValueView() {
+  hideAllViews();
+  document.getElementById('screen-title').textContent = 'Stock Value';
+  document.getElementById('back-btn').style.display = 'block';
+  document.getElementById('stock-value-view').style.display = 'block';
+  
+  await loadStockValueData();
+}
+
+async function loadStockValueData() {
+  const content = document.getElementById('stock-value-content');
+  const today = new Date().toISOString().split('T')[0];
+  
+  let shopsStockValue = 0;
+  let debtorsValue = 0;
+  let creditorsValue = 0;
+  
+  let html = '<div class="summary-card"><h2>Stock Value Summary</h2><table>';
+  html += '<thead><tr><th>Shop</th><th>Bags</th><th>Value</th></tr></thead><tbody>';
+  
+  for (const shop of SHOPS) {
+    const stockData = await getShopStock(shop.id, today);
+    let value = 0;
+    let bags = 0;
+    
+    PRODUCTS.forEach(product => {
+      const stock = stockData.stock[product.id] || { closing: 0 };
+      bags += stock.closing;
+      value += stock.closing * product.costPrice;
+    });
+    
+    shopsStockValue += value;
+    
+    html += `<tr><td>${shop.name}</td><td>${bags}</td><td>${value.toLocaleString()}</td></tr>`;
+  }
+  
+  html += `<tr><td><strong>TOTAL SHOPS STOCK</strong></td><td></td><td><strong>${shopsStockValue.toLocaleString()}</strong></td></tr>`;
+  html += '</tbody></table></div>';
+  
+  for (const shop of SHOPS) {
+    const q = query(collection(db, 'shops', shop.id, 'daily'));
+    const querySnapshot = await getDocs(q);
+    
+    for (const dateDoc of querySnapshot.docs) {
+      const date = dateDoc.id;
+      
+      const creditSalesSnap = await getDocs(collection(db, 'shops', shop.id, 'daily', date, 'creditSales'));
+      creditSalesSnap.forEach(doc => {
+        const sale = doc.data();
+        debtorsValue += sale.amount;
+      });
+      
+      const prepaymentsSnap = await getDocs(collection(db, 'shops', shop.id, 'daily', date, 'prepayments'));
+      prepaymentsSnap.forEach(doc => {
+        const prepay = doc.data();
+        creditorsValue += prepay.amount;
+      });
+    }
+  }
+  
+  const netStockValue = shopsStockValue + debtorsValue - creditorsValue;
+  
+  html += '<div class="summary-card"><h2>Financial Breakdown</h2>';
+  html += '<div class="breakdown-row"><span>Debtors Value (Money owed to us):</span><span class="breakdown-value">KSh ' + debtorsValue.toLocaleString() + '</span></div>';
+  html += '<div class="breakdown-row"><span>Shops Stock Value (Physical stock):</span><span class="breakdown-value">KSh ' + shopsStockValue.toLocaleString() + '</span></div>';
+  html += '<div class="breakdown-row"><span>Creditors Value (Feeds we owe):</span><span class="breakdown-value negative">KSh ' + creditorsValue.toLocaleString() + '</span></div>';
+  html += '<div class="formula-display">Net Stock Value = Stock in Shops + Debtors - Creditors</div>';
+  html += '<div class="breakdown-row total"><span>Net Stock Value:</span><span class="breakdown-value">KSh ' + netStockValue.toLocaleString() + '</span></div>';
+  html += '</div>';
+  
+  content.innerHTML = html;
+}
+
+async function showProductsView() {
+  hideAllViews();
+  document.getElementById('screen-title').textContent = 'Products';
+  document.getElementById('back-btn').style.display = 'block';
+  document.getElementById('products-view').style.display = 'block';
+  
+  await loadProductsData();
+}
+
+async function loadProductsData() {
+  const content = document.getElementById('products-content');
+  const canEdit = currentUserData.role === 'manager_full';
+  
+  let html = '<div class="summary-card"><h2>Product Prices</h2><table>';
+  html += '<thead><tr><th>Product</th><th>Cost Price</th><th>Sales Price</th></tr></thead><tbody>';
+  
+  PRODUCTS.forEach(product => {
+    html += `<tr><td>${product.name}</td>`;
+    if (canEdit) {
+      html += `<td><input type="number" value="${product.costPrice}" data-product="${product.id}" data-field="cost" class="price-input"></td>`;
+      html += `<td><input type="number" value="${product.salesPrice}" data-product="${product.id}" data-field="sales" class="price-input"></td>`;
+    } else {
+      html += `<td>${product.costPrice}</td><td>${product.salesPrice}</td>`;
+    }
+    html += `</tr>`;
+  });
+  
+  html += '</tbody></table>';
+  
+  if (canEdit) {
+    html += '<button class="add-btn" id="save-prices">Save Prices</button>';
+  }
+  
+  html += '</div>';
+  
+  content.innerHTML = html;
+  
+  if (canEdit) {
+    document.getElementById('save-prices').addEventListener('click', savePrices);
+  }
+}
+
+async function savePrices() {
+  const inputs = document.querySelectorAll('.price-input');
+  const updates = {};
+  
+  inputs.forEach(input => {
+    const productId = input.dataset.product;
+    const field = input.dataset.field;
+    const value = parseInt(input.value);
+    
+    if (!updates[productId]) {
+      updates[productId] = {};
+    }
+    
+    updates[productId][field] = value;
+  });
+  
+  try {
+    for (const productId in updates) {
+      const product = PRODUCTS.find(p => p.id === productId);
+      if (updates[productId].cost) product.costPrice = updates[productId].cost;
+      if (updates[productId].sales) product.salesPrice = updates[productId].sales;
+    }
+    
+    showToast('Prices updated successfully!');
+  } catch (error) {
+    showToast('Error updating prices: ' + error.message);
+  }
+}
+
+async function showAllClientsView() {
+  hideAllViews();
+  document.getElementById('screen-title').textContent = 'All Clients';
+  document.getElementById('back-btn').style.display = 'block';
+  document.getElementById('all-clients-view').style.display = 'block';
+  
+  await loadAllClientsData();
+}
+
+async function loadAllClientsData() {
+  const content = document.getElementById('all-clients-content');
+  const shopFilter = document.getElementById('clients-shop-filter').value;
+  const dateFilter = document.getElementById('clients-date-filter').value;
+  
+  let html = '<div class="summary-card"><h2>All Clients</h2><table>';
+  html += '<thead><tr><th>Name</th><th>Phone</th><th>Shop</th><th>Feed</th><th>Bags</th><th>Amount</th><th>Date</th></tr></thead><tbody>';
+  
+  const shopsToQuery = shopFilter ? [SHOPS.find(s => s.id === shopFilter)] : SHOPS;
+  
+  for (const shop of shopsToQuery) {
+    const dailyQuery = dateFilter 
+      ? query(collection(db, 'shops', shop.id, 'daily'), where('__name__', '==', dateFilter))
+      : query(collection(db, 'shops', shop.id, 'daily'));
+    
+    const querySnapshot = await getDocs(dailyQuery);
+    
+    for (const dateDoc of querySnapshot.docs) {
+      const date = dateDoc.id;
+      const clientsSnap = await getDocs(collection(db, 'shops', shop.id, 'daily', date, 'clients'));
+      
+      clientsSnap.forEach(doc => {
+        const client = doc.data();
+        html += `<tr><td>${client.name}</td><td>${client.phone}</td><td>${shop.name}</td><td>${client.feedName}</td><td>${client.bags}</td><td>${client.amount.toLocaleString()}</td><td>${date}</td></tr>`;
+      });
+    }
+  }
+  
+  html += '</tbody></table></div>';
+  
+  content.innerHTML = html;
+}
+
+async function showAdminPanel() {
+  hideAllViews();
+  document.getElementById('screen-title').textContent = 'Admin Panel';
+  document.getElementById('back-btn').style.display = 'block';
+  document.getElementById('admin-panel-view').style.display = 'block';
+  
+  await loadAdminData();
+}
+
+async function loadAdminData() {
+  const content = document.getElementById('admin-content');
+  
+  const usersQuery = query(collection(db, 'users'));
+  const usersSnapshot = await getDocs(usersQuery);
+  
+  let html = '<div class="summary-card"><h2>User Management</h2>';
+  
+  usersSnapshot.forEach(doc => {
+    const user = doc.data();
+    const userId = doc.id;
+    
+    html += `<div class="user-card">`;
+    html += `<h3>${user.name}</h3>`;
+    html += `<p>Email: ${user.email}</p>`;
+    html += `<p>Current Role: ${user.role}</p>`;
+    html += `<p>Shop: ${user.shop || 'None'}</p>`;
+    html += `<p>Status: ${user.status}</p>`;
+    html += `<div class="user-actions">`;
+    html += `<select class="role-select" data-user="${userId}">`;
+    html += `<option value="manager_full" ${user.role === 'manager_full' ? 'selected' : ''}>Manager (Full Access)</option>`;
+    html += `<option value="manager_view" ${user.role === 'manager_view' ? 'selected' : ''}>Manager (View Only)</option>`;
+    html += `<option value="attendant" ${user.role === 'attendant' ? 'selected' : ''}>Attendant</option>`;
+    html += `<option value="pending" ${user.role === 'pending' ? 'selected' : ''}>Pending</option>`;
+    html += `</select>`;
+    html += `<select class="shop-select" data-user="${userId}">`;
+    html += `<option value="">No Shop</option>`;
+    SHOPS.forEach(shop => {
+      html += `<option value="${shop.id}" ${user.shop === shop.id ? 'selected' : ''}>${shop.name}</option>`;
+    });
+    html += `</select>`;
+    html += `<button class="save-btn" data-user="${userId}">Save</button>`;
+    html += `<button class="remove-btn" data-user="${userId}">Remove</button>`;
+    html += `</div></div>`;
+  });
+  
+  html += '</div>';
+  
+  content.innerHTML = html;
+  
+  document.querySelectorAll('.save-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const userId = e.target.dataset.user;
+      const role = document.querySelector(`.role-select[data-user="${userId}"]`).value;
+      const shop = document.querySelector(`.shop-select[data-user="${userId}"]`).value;
+      
+      await updateDoc(doc(db, 'users', userId), {
+        role: role,
+        shop: shop || null,
+        status: role === 'pending' ? 'pending' : 'active'
+      });
+      
+      showToast('User updated!');
+      loadAdminData();
+    });
+  });
+  
+  document.querySelectorAll('.remove-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const userId = e.target.dataset.user;
+      
+      if (confirm('Are you sure you want to remove this user?')) {
+        await deleteDoc(doc(db, 'users', userId));
+        showToast('User removed!');
+        loadAdminData();
+      }
+    });
+  });
+}
+async function exportDoc1PDF() {
+  const date = document.getElementById('sales-date').value;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  
+  const dateObj = new Date(date);
+  const options = { day: 'numeric', month: 'long', year: 'numeric' };
+  const formattedDate = dateObj.toLocaleDateString('en-GB', options);
+  const day = dateObj.getDate();
+  const suffix = day % 10 === 1 && day !== 11 ? 'st' : day % 10 === 2 && day !== 12 ? 'nd' : day % 10 === 3 && day !== 13 ? 'rd' : 'th';
+  const finalDate = `${day}${suffix} ${dateObj.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}`;
+  
+  doc.setFontSize(16);
+  doc.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
+  doc.setFontSize(12);
+  doc.text(`Stock Report as at ${finalDate}`, 105, 22, { align: 'center' });
+  
+  let yPosition = 30;
+  
+  for (const shop of SHOPS) {
+    if (yPosition > 250) {
+      doc.addPage();
+      yPosition = 20;
+    }
+    
+    const stockData = await getShopStock(shop.id, date);
+    
+    doc.setFontSize(14);
+    doc.text(shop.name.toUpperCase() + ' SHOP', 14, yPosition);
+    yPosition += 7;
+    
+    const tableData = [];
     let totalSales = 0;
-    let shopIndex = 1;
-
-    for (const shop of SHOPS) {
-      const stockRef = doc(db, 'stock', `${shop}_${selectedDate}`);
-      const stockDoc = await getDoc(stockRef);
-
-      let shopBags = 0;
-      let shopSold = 0;
-      let shopSales = 0;
-
-      if (stockDoc.exists()) {
-        const stockData = stockDoc.data();
-        PRODUCTS.forEach(product => {
-          const opening = stockData.openingStock?.[product.name] || 0;
-          const restocking = stockData.restocking?.[product.name] || 0;
-          const closing = stockData.closingStock?.[product.name] || 0;
-          const sold = opening + restocking - closing;
-          
-          shopBags += opening;
-          shopSold += sold;
-          shopSales += sold * product.sales;
-        });
-      }
-
-      totalSales += shopSales;
-
-      const dateFormatted = new Date(selectedDate).toLocaleDateString('en-GB');
-      pdf.text(shopIndex.toString(), 15, y);
-      pdf.text(dateFormatted, 35, y);
-      pdf.text(shop, 70, y);
-      pdf.text(shopBags.toString(), 120, y);
-      pdf.text(shopSold.toString(), 145, y);
-      pdf.text(shopSales.toLocaleString(), 175, y);
-
-      y += 7;
-      shopIndex++;
-    }
-
-    // Get additional financial data
-    let prepayments = 0;
-    let debtPayments = 0;
-    let underPayments = 0;
-    let discounts = 0;
-
-    // Calculate prepayments
-    const prepayQuery = query(collection(db, 'prepayments'), where('date', '==', selectedDate));
-    const prepayDocs = await getDocs(prepayQuery);
-    prepayDocs.forEach(doc => {
-      prepayments += doc.data().amountPaid || 0;
-    });
-
-    // Calculate debt payments
-    const debtQuery = query(collection(db, 'debtPayments'), where('date', '==', selectedDate));
-    const debtDocs = await getDocs(debtQuery);
-    debtDocs.forEach(doc => {
-      debtPayments += doc.data().amountPaid || 0;
-    });
-
-    // Sales breakdown
-    y += 10;
-    pdf.setFont(undefined, 'bold');
-    pdf.text('SALES TOTALS', 15, y);
-    y += 8;
-    pdf.setFont(undefined, 'normal');
-    pdf.text(totalSales.toLocaleString(), 175, y);
-    y += 7;
-    pdf.text('PREPAYMENTS', 15, y);
-    pdf.text(prepayments.toLocaleString(), 175, y);
-    y += 7;
-    pdf.text('DEBT PAYMENTS MADE', 15, y);
-    pdf.text(debtPayments.toLocaleString(), 175, y);
-    y += 7;
-    pdf.text('UNDER-PAYMENTS', 15, y);
-    pdf.text(underPayments.toLocaleString(), 175, y);
-    y += 7;
-    pdf.text('DISCOUNTS GIVEN', 15, y);
-    pdf.text(discounts.toLocaleString(), 175, y);
-    y += 10;
-    pdf.setFont(undefined, 'bold');
-    pdf.text('TOTAL SALES', 15, y);
-    const finalTotal = totalSales + prepayments + debtPayments - underPayments - discounts;
-    pdf.text(finalTotal.toLocaleString(), 175, y);
-
-    // PAGE 2: DEBTORS
-    pdf.addPage();
-    pdf.setFontSize(14);
-    pdf.setFont(undefined, 'bold');
-    pdf.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
-    pdf.setFontSize(12);
-    pdf.text('DEBTORS', 105, 23, { align: 'center' });
-
-    y = 40;
-    pdf.setFontSize(10);
-    pdf.setFont(undefined, 'normal');
-
-    // Debtors table headers
-    pdf.text('CLIENT', 15, y);
-    pdf.text('FEEDS', 70, y);
-    pdf.text('BAGS', 100, y);
-    pdf.text('PRICE', 120, y);
-    pdf.text('AMOUNT', 145, y);
-    pdf.text('PAID', 170, y);
-    pdf.text('BALANCE', 190, y);
-
-    y += 8;
-
-    let totalDebtors = 0;
-
-    // Get credit sales (debtors)
-    const creditQuery = query(
-      collection(db, 'creditSales'),
-      where('status', '==', 'pending')
-    );
-    const creditDocs = await getDocs(creditQuery);
-    
-    creditDocs.forEach(docSnapshot => {
-      const data = docSnapshot.data();
-      pdf.text(data.clientName || '', 15, y);
-      pdf.text(data.feedType || '', 70, y);
-      pdf.text((data.bags || 0).toString(), 100, y);
-      pdf.text((data.totalAmount / data.bags).toLocaleString(), 120, y);
-      pdf.text((data.totalAmount || 0).toLocaleString(), 145, y);
-      pdf.text((data.paidAmount || 0).toLocaleString(), 170, y);
-      pdf.text((data.remainingAmount || 0).toLocaleString(), 190, y);
-      
-      totalDebtors += data.remainingAmount || 0;
-      y += 7;
-      
-      if (y > 270) {
-        pdf.addPage();
-        y = 20;
-      }
-    });
-
-    y += 5;
-    pdf.setFont(undefined, 'bold');
-    pdf.text('TOTAL', 15, y);
-    pdf.text(totalDebtors.toLocaleString(), 190, y);
-
-    // PAGE 3: CREDITORS
-    pdf.addPage();
-    pdf.setFontSize(14);
-    pdf.setFont(undefined, 'bold');
-    pdf.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
-    pdf.setFontSize(12);
-    pdf.text('CREDITORS VALUE', 105, 23, { align: 'center' });
-
-    y = 40;
-    pdf.setFontSize(10);
-    pdf.setFont(undefined, 'normal');
-
-    // Creditors table headers
-    pdf.text('INDEX', 15, y);
-    pdf.text('DATE', 35, y);
-    pdf.text('SHOP', 70, y);
-    pdf.text('FEED', 110, y);
-    pdf.text('BAGS', 140, y);
-    pdf.text('PRICE', 165, y);
-    pdf.text('VALUE', 190, y);
-
-    y += 8;
-
-    let totalCreditorsValue = 0;
-    let creditorIndex = 1;
-
-    // Get prepayments (creditors)
-    const allPrepayQuery = query(
-      collection(db, 'prepayments'),
-      where('status', '==', 'pending')
-    );
-    const allPrepayDocs = await getDocs(allPrepayQuery);
-    
-    allPrepayDocs.forEach(docSnapshot => {
-      const data = docSnapshot.data();
-      const product = PRODUCTS.find(p => p.name === data.feedType);
-      const value = (data.remainingBags || 0) * (product?.cost || 0);
-      
-      const dateFormatted = new Date(data.date).toLocaleDateString('en-GB');
-      pdf.text(creditorIndex.toString(), 15, y);
-      pdf.text(dateFormatted, 35, y);
-      pdf.text(data.shop || '', 70, y);
-      pdf.text(data.feedType || '', 110, y);
-      pdf.text((data.remainingBags || 0).toString(), 140, y);
-      pdf.text((product?.cost || 0).toLocaleString(), 165, y);
-      pdf.text(value.toLocaleString(), 190, y);
-      
-      totalCreditorsValue += value;
-      creditorIndex++;
-      y += 7;
-      
-      if (y > 270) {
-        pdf.addPage();
-        y = 20;
-      }
-    });
-
-    y += 5;
-    pdf.setFont(undefined, 'bold');
-    pdf.text('CREDITORS VALUE', 15, y);
-    pdf.text(totalCreditorsValue.toLocaleString(), 190, y);
-
-    // PAGE 4: STOCK VALUE SUMMARY
-    pdf.addPage();
-    pdf.setFontSize(14);
-    pdf.setFont(undefined, 'bold');
-    pdf.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
-    pdf.setFontSize(12);
-    pdf.text(`STOCK VALUE AS AT ${formattedDate}`, 105, 23, { align: 'center' });
-
-    y = 40;
-    pdf.setFontSize(10);
-    pdf.setFont(undefined, 'normal');
-
-    // Stock value table
-    pdf.text('INDEX', 15, y);
-    pdf.text('DATE', 35, y);
-    pdf.text('SHOP', 70, y);
-    pdf.text('BAGS', 140, y);
-    pdf.text('VALUE', 180, y);
-
-    y += 8;
-
     let totalStockValue = 0;
-    shopIndex = 1;
-
-    for (const shop of SHOPS) {
-      const stockRef = doc(db, 'stock', `${shop}_${selectedDate}`);
-      const stockDoc = await getDoc(stockRef);
-
-      let shopValue = 0;
-      let shopBags = 0;
-
-      if (stockDoc.exists()) {
-        const stockData = stockDoc.data();
-        PRODUCTS.forEach(product => {
-          const closing = stockData.closingStock?.[product.name] || 0;
-          shopBags += closing;
-          shopValue += closing * product.cost;
-        });
+    
+    PRODUCTS.forEach((product, index) => {
+      const stock = stockData.stock[product.id] || { opening: 0, restocking: 0, closing: 0, discount: 0 };
+      const sales = stock.opening + stock.restocking - stock.closing;
+      const salesAmt = sales * (product.salesPrice - stock.discount);
+      const stockValue = stock.closing * product.costPrice;
+      
+      totalSales += salesAmt;
+      totalStockValue += stockValue;
+      
+      tableData.push([
+        index + 1,
+        product.name,
+        stock.opening,
+        stock.restocking,
+        stock.closing,
+        product.costPrice,
+        product.salesPrice - stock.discount,
+        sales,
+        salesAmt.toLocaleString(),
+        stockValue.toLocaleString()
+      ]);
+    });
+    
+    tableData.push([
+      '', 'TOTAL', '', '', '', '', '', '',
+      totalSales.toLocaleString(),
+      totalStockValue.toLocaleString()
+    ]);
+    
+    doc.autoTable({
+      startY: yPosition,
+      head: [['#', 'Product', 'Opening', 'Restock', 'Closing', 'Cost', 'Sales Price', 'Sales', 'Sales Amt', 'Stock Value']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [46, 125, 50], fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      columnStyles: {
+        0: { cellWidth: 8 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 15 },
+        3: { cellWidth: 15 },
+        4: { cellWidth: 15 },
+        5: { cellWidth: 15 },
+        6: { cellWidth: 20 },
+        7: { cellWidth: 15 },
+        8: { cellWidth: 25 },
+        9: { cellWidth: 25 }
       }
-
-      totalStockValue += shopValue;
-
-      const dateFormatted = new Date(selectedDate).toLocaleDateString('en-GB');
-      pdf.text(shopIndex.toString(), 15, y);
-      pdf.text(dateFormatted, 35, y);
-      pdf.text(shop, 70, y);
-      pdf.text(shopBags.toString(), 140, y);
-      pdf.text(shopValue.toLocaleString(), 180, y);
-
-      y += 7;
-      shopIndex++;
-    }
-
-    // Final summary
-    y += 10;
-    pdf.setFont(undefined, 'bold');
-    pdf.text('TOTAL', 70, y);
-    pdf.text(totalStockValue.toLocaleString(), 180, y);
-    y += 10;
-    pdf.text('DEBTORS VALUE', 70, y);
-    pdf.text(totalDebtors.toLocaleString(), 180, y);
-    y += 10;
-    pdf.text('CREDITORS VALUE', 70, y);
-    pdf.text(totalCreditorsValue.toLocaleString(), 180, y);
-    y += 10;
-    const netValue = totalStockValue + totalDebtors - totalCreditorsValue;
-    pdf.setFontSize(12);
-    pdf.text('NET VALUE', 70, y);
-    pdf.text(`Ksh ${netValue.toLocaleString()}.00`, 180, y);
-
-    // Save PDF
-    pdf.save('YFarmers Stock Value Book.pdf');
-    showSuccess('Stock Value Book exported successfully!');
-
-  } catch (error) {
-    console.error('Error exporting Doc2:', error);
-    showError('Error exporting PDF: ' + error.message);
-  }
-}
-
-// Admin panel functions
-async function loadAdminPanel() {
-  if (currentUserData.role !== 'manager_full') {
-    showError('Access denied');
-    return;
-  }
-
-  try {
-    const usersSnapshot = await getDocs(collection(db, 'users'));
-    const tbody = document.getElementById('users-table-body');
-    tbody.innerHTML = '';
-
-    usersSnapshot.forEach(doc => {
-      const user = doc.data();
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${user.name}</td>
-        <td>${user.email}</td>
-        <td>
-          <select class="role-select" data-uid="${doc.id}">
-            <option value="pending" ${user.role === 'pending' ? 'selected' : ''}>Pending</option>
-            <option value="manager_full" ${user.role === 'manager_full' ? 'selected' : ''}>Manager (Full Access)</option>
-            <option value="manager_view" ${user.role === 'manager_view' ? 'selected' : ''}>Manager (View Only)</option>
-            <option value="attendant" ${user.role === 'attendant' ? 'selected' : ''}>Attendant</option>
-          </select>
-        </td>
-        <td>
-          <select class="shop-select" data-uid="${doc.id}" ${user.role !== 'attendant' ? 'disabled' : ''}>
-            <option value="">Select Shop</option>
-            ${SHOPS.map(shop => `<option value="${shop}" ${user.assignedShop === shop ? 'selected' : ''}>${shop}</option>`).join('')}
-          </select>
-        </td>
-        <td>
-          <button onclick="updateUser('${doc.id}')" class="btn-small">Update</button>
-          <button onclick="deleteUser('${doc.id}')" class="btn-small btn-danger">Delete</button>
-        </td>
-      `;
-      tbody.appendChild(row);
     });
-
-    // Enable/disable shop selector based on role
-    document.querySelectorAll('.role-select').forEach(select => {
-      select.addEventListener('change', (e) => {
-        const uid = e.target.dataset.uid;
-        const shopSelect = document.querySelector(`.shop-select[data-uid="${uid}"]`);
-        shopSelect.disabled = e.target.value !== 'attendant';
-      });
-    });
-
-  } catch (error) {
-    console.error('Error loading admin panel:', error);
-    showError('Error loading users');
+    
+    yPosition = doc.lastAutoTable.finalY + 10;
   }
-}
-
-// Update user (global function for admin panel)
-window.updateUser = async function(uid) {
-  const roleSelect = document.querySelector(`.role-select[data-uid="${uid}"]`);
-  const shopSelect = document.querySelector(`.shop-select[data-uid="${uid}"]`);
   
-  const role = roleSelect.value;
-  const assignedShop = role === 'attendant' ? shopSelect.value : 'All Shops';
+  doc.save(`YFarmers Stock Report as at ${finalDate}.pdf`);
+  showToast('PDF exported successfully!');
+}
 
-  if (role === 'attendant' && !assignedShop) {
-    showError('Please select a shop for attendant');
-    return;
-  }
-
-  try {
-    await updateDoc(doc(db, 'users', uid), {
-      role,
-      assignedShop
+async function exportDoc2PDF() {
+  const date = document.getElementById('sales-date').value;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  
+  const dateObj = new Date(date);
+  const day = dateObj.getDate();
+  const suffix = day % 10 === 1 && day !== 11 ? 'st' : day % 10 === 2 && day !== 12 ? 'nd' : day % 10 === 3 && day !== 13 ? 'rd' : 'th';
+  const finalDate = `${day}${suffix} ${dateObj.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}`;
+  
+  doc.setFontSize(16);
+  doc.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
+  doc.setFontSize(12);
+  doc.text(`Stock Value Book - ${finalDate}`, 105, 22, { align: 'center' });
+  
+  let yPosition = 35;
+  
+  doc.setFontSize(14);
+  doc.text('SALES TOTALS', 14, yPosition);
+  yPosition += 7;
+  
+  const salesData = [];
+  let totalSalesAmount = 0;
+  
+  for (const shop of SHOPS) {
+    const stockData = await getShopStock(shop.id, date);
+    let bags = 0;
+    let bagsSold = 0;
+    let sales = 0;
+    
+    PRODUCTS.forEach(product => {
+      const stock = stockData.stock[product.id] || { opening: 0, restocking: 0, closing: 0, discount: 0 };
+      bags += stock.closing;
+      const sold = stock.opening + stock.restocking - stock.closing;
+      bagsSold += sold;
+      sales += sold * (product.salesPrice - stock.discount);
     });
-    showSuccess('User updated successfully!');
-  } catch (error) {
-    console.error('Error updating user:', error);
-    showError('Error updating user');
+    
+    totalSalesAmount += sales;
+    salesData.push([shop.name, bags, bagsSold, sales.toLocaleString()]);
   }
-};
-
-// Delete user (global function for admin panel)
-window.deleteUser = async function(uid) {
-  if (!confirm('Are you sure you want to delete this user?')) return;
-
-  try {
-    await deleteDoc(doc(db, 'users', uid));
-    showSuccess('User deleted successfully!');
-    loadAdminPanel();
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    showError('Error deleting user');
+  
+  salesData.push(['TOTAL', '', '', totalSalesAmount.toLocaleString()]);
+  
+  doc.autoTable({
+    startY: yPosition,
+    head: [['Shop', 'Bags', 'Bags Sold', 'Sales Amount']],
+    body: salesData,
+    theme: 'grid',
+    headStyles: { fillColor: [46, 125, 50] }
+  });
+  
+  yPosition = doc.lastAutoTable.finalY + 15;
+  
+  if (yPosition > 250) {
+    doc.addPage();
+    yPosition = 20;
   }
-};
-
-// Utility functions
-function showError(message) {
-  alert('Error: ' + message);
+  
+  doc.setFontSize(14);
+  doc.text('DEBTORS', 14, yPosition);
+  yPosition += 7;
+  
+  const debtorsData = [];
+  let totalDebtors = 0;
+  
+  for (const shop of SHOPS) {
+    const q = query(collection(db, 'shops', shop.id, 'daily'));
+    const querySnapshot = await getDocs(q);
+    
+    for (const dateDoc of querySnapshot.docs) {
+      const docDate = dateDoc.id;
+      const creditSalesSnap = await getDocs(collection(db, 'shops', shop.id, 'daily', docDate, 'creditSales'));
+      
+      creditSalesSnap.forEach(doc => {
+        const sale = doc.data();
+        totalDebtors += sale.amount;
+        debtorsData.push([
+          sale.debtorName,
+          sale.feedName,
+          sale.bags,
+          (sale.amount / sale.bags).toFixed(0),
+          sale.amount.toLocaleString(),
+          shop.name,
+          docDate
+        ]);
+      });
+    }
+  }
+  
+  if (debtorsData.length > 0) {
+    debtorsData.push(['', '', '', 'TOTAL', totalDebtors.toLocaleString(), '', '']);
+    
+    doc.autoTable({
+      startY: yPosition,
+      head: [['Client', 'Feed', 'Bags', 'Price', 'Amount', 'Shop', 'Date']],
+      body: debtorsData,
+      theme: 'grid',
+      headStyles: { fillColor: [46, 125, 50] }
+    });
+    
+    yPosition = doc.lastAutoTable.finalY + 15;
+  } else {
+    doc.text('No debtors recorded', 14, yPosition);
+    yPosition += 10;
+  }
+  
+  if (yPosition > 250) {
+    doc.addPage();
+    yPosition = 20;
+  }
+  
+  doc.setFontSize(14);
+  doc.text('CREDITORS', 14, yPosition);
+  yPosition += 7;
+  
+  const creditorsData = [];
+  let totalCreditors = 0;
+  
+  for (const shop of SHOPS) {
+    const q = query(collection(db, 'shops', shop.id, 'daily'));
+    const querySnapshot = await getDocs(q);
+    
+    for (const dateDoc of querySnapshot.docs) {
+      const docDate = dateDoc.id;
+      const prepaymentsSnap = await getDocs(collection(db, 'shops', shop.id, 'daily', docDate, 'prepayments'));
+      
+      prepaymentsSnap.forEach(doc => {
+        const prepay = doc.data();
+        totalCreditors += prepay.amount;
+        creditorsData.push([
+          prepay.clientName,
+          prepay.amount.toLocaleString(),
+          shop.name,
+          docDate
+        ]);
+      });
+    }
+  }
+  
+  if (creditorsData.length > 0) {
+    creditorsData.push(['TOTAL', totalCreditors.toLocaleString(), '', '']);
+    
+    doc.autoTable({
+      startY: yPosition,
+      head: [['Client', 'Amount Prepaid', 'Shop', 'Date']],
+      body: creditorsData,
+      theme: 'grid',
+      headStyles: { fillColor: [46, 125, 50] }
+    });
+    
+    yPosition = doc.lastAutoTable.finalY + 15;
+  } else {
+    doc.text('No creditors recorded', 14, yPosition);
+    yPosition += 10;
+  }
+  
+  if (yPosition > 250) {
+    doc.addPage();
+    yPosition = 20;
+  }
+  
+  doc.setFontSize(14);
+  doc.text('STOCK VALUE SUMMARY', 14, yPosition);
+  yPosition += 7;
+  
+  const stockValueData = [];
+  let totalStockValue = 0;
+  
+  for (const shop of SHOPS) {
+    const stockData = await getShopStock(shop.id, date);
+    let value = 0;
+    let bags = 0;
+    
+    PRODUCTS.forEach(product => {
+      const stock = stockData.stock[product.id] || { closing: 0 };
+      bags += stock.closing;
+      value += stock.closing * product.costPrice;
+    });
+    
+    totalStockValue += value;
+    stockValueData.push([shop.name, bags, value.toLocaleString()]);
+  }
+  
+  stockValueData.push(['TOTAL STOCK VALUE', '', totalStockValue.toLocaleString()]);
+  stockValueData.push(['DEBTORS VALUE', '', totalDebtors.toLocaleString()]);
+  stockValueData.push(['CREDITORS VALUE', '', totalCreditors.toLocaleString()]);
+  stockValueData.push(['NET VALUE', '', (totalStockValue + totalDebtors - totalCreditors).toLocaleString()]);
+  
+  doc.autoTable({
+    startY: yPosition,
+    head: [['Description', 'Bags', 'Value (KSh)']],
+    body: stockValueData,
+    theme: 'grid',
+    headStyles: { fillColor: [46, 125, 50] }
+  });
+  
+  doc.save(`YFarmers Stock Value Book ${finalDate}.pdf`);
+  showToast('PDF exported successfully!');
 }
 
-function showSuccess(message) {
-  alert(message);
+function showToast(message) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.classList.add('show');
+  
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3000);
 }
-
-// Set today's date as default
-document.addEventListener('DOMContentLoaded', () => {
-  const dateInput = document.getElementById('stock-date');
-  if (dateInput) {
-    dateInput.value = new Date().toISOString().split('T')[0];
-  }
-});
