@@ -1,137 +1,372 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Young Farmers - Stock Management</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#2e7d32">
-    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Young Farmers Stock Management</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
-    <div id="app">
-        <div id="splash-screen" class="splash-screen active">
-            <div class="logo-container">
-                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2MDAgNDAwIj4KICA8Y2lyY2xlIGN4PSIzMDAiIGN5PSIxNTAiIHI9IjEyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjY2IiBzdHJva2Utd2lkdGg9IjMiLz4KICA8IS0tIEZpc2ggLS0+CiAgPHBhdGggZD0iTTE4MCAxNTBjMCwwIC0zMCwtMjAgLTUwLC0xMGMtMjAsMTAgLTMwLDMwIC0yMCw1MGMxMCwyMCAzMCwyMCA1MCwxMGMyMCwtMTAgMzAsLTMwIDIwLC01MCIgZmlsbD0iIzJlN2QzMiIvPgogIDxjaXJjbGUgY3g9IjE0MCIgY3k9IjE0MCIgcj0iMyIgZmlsbD0iIzAwMCIvPgogIDwhLS0gQ2hpY2tlbiAtLT4KICA8ZWxsaXBzZSBjeD0iMzAwIiBjeT0iMTgwIiByeD0iMjUiIHJ5PSIzMCIgZmlsbD0iIzJlN2QzMiIvPgogIDxjaXJjbGUgY3g9IjMwMCIgY3k9IjE2MCIgcj0iMTUiIGZpbGw9IiMyZTdkMzIiLz4KICA8Y2lyY2xlIGN4PSIyOTUiIGN5PSIxNTUiIHI9IjIiIGZpbGw9IiMwMDAiLz4KICA8cGF0aCBkPSJNMzA1IDE1NWMwLDAgNSwtNSAxMCwtMyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY5ODAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICA8IS0tIENvdyAtLT4KICA8ZWxsaXBzZSBjeD0iNDIwIiBjeT0iMTUwIiByeD0iMzAiIHJ5PSI0MCIgZmlsbD0iI2ZmZiIgc3Ryb2tlPSIjNjY2IiBzdHJva2Utd2lkdGg9IjIiLz4KICA8Y2lyY2xlIGN4PSI0MTUiIGN5PSIxNDUiIHI9IjMiIGZpbGw9IiMwMDAiLz4KICA8Y2lyY2xlIGN4PSI0MjUiIGN5PSIxNDUiIHI9IjMiIGZpbGw9IiMwMDAiLz4KICA8ZWxsaXBzZSBjeD0iNDIwIiBjeT0iMTYwIiByeD0iMTAiIHJ5PSI1IiBmaWxsPSIjZmZjMGNiIi8+CiAgPHBhdGggZD0iTTQwNSAxMzVjMCwwIC01LC0xMCAwLC0xNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjY2IiBzdHJva2Utd2lkdGg9IjIiLz4KICA8cGF0aCBkPSJNNDM1IDEzNWMwLDAgNSwtMTAgMCwtMTUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzY2NiIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPCEtLSBMZWF2ZXMgLS0+CiAgPGVsbGlwc2UgY3g9IjI3MCIgY3k9IjIzMCIgcng9IjIwIiByeT0iMTAiIGZpbGw9IiMyZTdkMzIiLz4KICA8ZWxsaXBzZSBjeD0iMzAwIiBjeT0iMjM1IiByeD0iMjUiIHJ5PSIxMiIgZmlsbD0iIzJlN2QzMiIvPgogIDxlbGxpcHNlIGN4PSIzMzAiIGN5PSIyMzAiIHJ4PSIyMCIgcnk9IjEwIiBmaWxsPSIjMmU3ZDMyIi8+CiAgPCEtLSBUZXh0IC0tPgogIDx0ZXh0IHg9IjMwMCIgeT0iMjkwIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDgiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjMzMzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5ZT1VOR0ZBUk1FUlM8L3RleHQ+CiAgPHRleHQgeD0iMzAwIiB5PSIzMjAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZm9udC1zdHlsZT0iaXRhbGljIiBmaWxsPSIjMmU3ZDMyIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj4uLi5mZWVkaW5nIHRoZSBmdXR1cmU8L3RleHQ+Cjwvc3ZnPg==" alt="Young Farmers Logo" class="logo-animation">
-            </div>
-        </div>
-
-        <div id="auth-screen" class="screen">
-            <div class="auth-container">
-                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2MDAgNDAwIj4KICA8Y2lyY2xlIGN4PSIzMDAiIGN5PSIxNTAiIHI9IjEyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjY2IiBzdHJva2Utd2lkdGg9IjMiLz4KICA8IS0tIEZpc2ggLS0+CiAgPHBhdGggZD0iTTE4MCAxNTBjMCwwIC0zMCwtMjAgLTUwLC0xMGMtMjAsMTAgLTMwLDMwIC0yMCw1MGMxMCwyMCAzMCwyMCA1MCwxMGMyMCwtMTAgMzAsLTMwIDIwLC01MCIgZmlsbD0iIzJlN2QzMiIvPgogIDxjaXJjbGUgY3g9IjE0MCIgY3k9IjE0MCIgcj0iMyIgZmlsbD0iIzAwMCIvPgogIDwhLS0gQ2hpY2tlbiAtLT4KICA8ZWxsaXBzZSBjeD0iMzAwIiBjeT0iMTgwIiByeD0iMjUiIHJ5PSIzMCIgZmlsbD0iIzJlN2QzMiIvPgogIDxjaXJjbGUgY3g9IjMwMCIgY3k9IjE2MCIgcj0iMTUiIGZpbGw9IiMyZTdkMzIiLz4KICA8Y2lyY2xlIGN4PSIyOTUiIGN5PSIxNTUiIHI9IjIiIGZpbGw9IiMwMDAiLz4KICA8cGF0aCBkPSJNMzA1IDE1NWMwLDAgNSwtNSAxMCwtMyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY5ODAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICA8IS0tIENvdyAtLT4KICA8ZWxsaXBzZSBjeD0iNDIwIiBjeT0iMTUwIiByeD0iMzAiIHJ5PSI0MCIgZmlsbD0iI2ZmZiIgc3Ryb2tlPSIjNjY2IiBzdHJva2Utd2lkdGg9IjIiLz4KICA8Y2lyY2xlIGN4PSI0MTUiIGN5PSIxNDUiIHI9IjMiIGZpbGw9IiMwMDAiLz4KICA8Y2lyY2xlIGN4PSI0MjUiIGN5PSIxNDUiIHI9IjMiIGZpbGw9IiMwMDAiLz4KICA8ZWxsaXBzZSBjeD0iNDIwIiBjeT0iMTYwIiByeD0iMTAiIHJ5PSI1IiBmaWxsPSIjZmZjMGNiIi8+CiAgPHBhdGggZD0iTTQwNSAxMzVjMCwwIC01LC0xMCAwLC0xNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjY2IiBzdHJva2Utd2lkdGg9IjIiLz4KICA8cGF0aCBkPSJNNDM1IDEzNWMwLDAgNSwtMTAgMCwtMTUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzY2NiIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPCEtLSBMZWF2ZXMgLS0+CiAgPGVsbGlwc2UgY3g9IjI3MCIgY3k9IjIzMCIgcng9IjIwIiByeT0iMTAiIGZpbGw9IiMyZTdkMzIiLz4KICA8ZWxsaXBzZSBjeD0iMzAwIiBjeT0iMjM1IiByeD0iMjUiIHJ5PSIxMiIgZmlsbD0iIzJlN2QzMiIvPgogIDxlbGxpcHNlIGN4PSIzMzAiIGN5PSIyMzAiIHJ4PSIyMCIgcnk9IjEwIiBmaWxsPSIjMmU3ZDMyIi8+CiAgPCEtLSBUZXh0IC0tPgogIDx0ZXh0IHg9IjMwMCIgeT0iMjkwIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDgiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjMzMzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5ZT1VOR0ZBUk1FUlM8L3RleHQ+CiAgPHRleHQgeD0iMzAwIiB5PSIzMjAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZm9udC1zdHlsZT0iaXRhbGljIiBmaWxsPSIjMmU3ZDMyIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj4uLi5mZWVkaW5nIHRoZSBmdXR1cmU8L3RleHQ+Cjwvc3ZnPg==" alt="Young Farmers" class="auth-logo">
-                <h2 id="auth-title">Sign In</h2>
-                <form id="auth-form">
-                    <input type="email" id="auth-email" placeholder="Email" required>
-                    <input type="password" id="auth-password" placeholder="Password" required>
-                    <input type="text" id="auth-name" placeholder="Full Name" style="display:none;">
-                    <button type="submit" id="auth-submit">Sign In</button>
-                </form>
-                <button id="google-signin" class="google-btn">
-                    <svg viewBox="0 0 24 24" width="20" height="20">
-                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                    </svg>
-                    Sign in with Google
-                </button>
-                <p class="auth-toggle">
-                    <span id="toggle-text">Don't have an account?</span>
-                    <a href="#" id="toggle-auth">Sign Up</a>
-                </p>
-                <div id="auth-error" class="error-message"></div>
-            </div>
-        </div>
-
-        <div id="main-screen" class="screen">
-            <header>
-                <button id="back-btn" class="back-btn" style="display:none;">← Back</button>
-                <h1 id="screen-title">Young Farmers</h1>
-                <button id="logout-btn" class="logout-btn">Logout</button>
-            </header>
-
-            <div id="dashboard" class="content">
-                <div class="dashboard-grid">
-                    <button class="shop-btn" data-shop="usigu">Usigu</button>
-                    <button class="shop-btn" data-shop="port-victoria">Port Victoria</button>
-                    <button class="shop-btn" data-shop="mbita">Mbita</button>
-                    <button class="shop-btn" data-shop="usenge">Usenge</button>
-                    <button class="shop-btn" data-shop="lwanda-kotieno">Lwanda Kotieno</button>
-                    <button class="shop-btn" data-shop="obambo">Obambo</button>
-                    <button class="shop-btn" data-shop="sori">Sori</button>
-                    <button class="manager-btn" id="total-sales-btn">Total Sales</button>
-                    <button class="manager-btn" id="debtors-btn">Debtors</button>
-                    <button class="manager-btn" id="creditors-btn">Creditors</button>
-                    <button class="manager-btn" id="stock-value-btn">Stock Value</button>
-                    <button class="manager-btn" id="products-btn">Products</button>
-                    <button class="manager-btn" id="all-clients-btn">All Clients</button>
-                    <button class="admin-btn" id="admin-panel-btn">Admin Panel</button>
-                </div>
-            </div>
-
-            <div id="shop-view" class="content" style="display:none;">
-                <div class="date-selector">
-                    <label>Select Date:</label>
-                    <input type="date" id="shop-date" value="">
-                </div>
-                <div id="shop-content"></div>
-            </div>
-
-            <div id="total-sales-view" class="content" style="display:none;">
-                <div class="date-selector">
-                    <label>Select Date:</label>
-                    <input type="date" id="sales-date" value="">
-                </div>
-                <button id="export-doc1" class="export-btn">Export Doc1 PDF</button>
-                <button id="export-doc2" class="export-btn">Export Doc2 PDF</button>
-                <div id="sales-content"></div>
-            </div>
-
-            <div id="debtors-view" class="content" style="display:none;">
-                <div id="debtors-content"></div>
-            </div>
-
-            <div id="creditors-view" class="content" style="display:none;">
-                <div id="creditors-content"></div>
-            </div>
-
-            <div id="stock-value-view" class="content" style="display:none;">
-                <div id="stock-value-content"></div>
-            </div>
-
-            <div id="products-view" class="content" style="display:none;">
-                <div id="products-content"></div>
-            </div>
-
-            <div id="all-clients-view" class="content" style="display:none;">
-                <div class="date-selector">
-                    <label>Filter by Shop:</label>
-                    <select id="clients-shop-filter">
-                        <option value="">All Shops</option>
-                        <option value="usigu">Usigu</option>
-                        <option value="port-victoria">Port Victoria</option>
-                        <option value="mbita">Mbita</option>
-                        <option value="usenge">Usenge</option>
-                        <option value="lwanda-kotieno">Lwanda Kotieno</option>
-                        <option value="obambo">Obambo</option>
-                        <option value="sori">Sori</option>
-                    </select>
-                    <label>Filter by Date:</label>
-                    <input type="date" id="clients-date-filter">
-                </div>
-                <div id="all-clients-content"></div>
-            </div>
-
-            <div id="admin-panel-view" class="content" style="display:none;">
-                <div id="admin-content"></div>
-            </div>
-        </div>
-
-        <div id="toast" class="toast"></div>
+  
+  <!-- Auth Screen -->
+  <div id="auth-screen" class="screen">
+    <!-- Login Container -->
+    <div id="login-container" class="auth-container">
+      <h1>Young Farmers</h1>
+      <h2>Stock Management System</h2>
+      
+      <form id="login-form" class="auth-form">
+        <h3>Login</h3>
+        <input type="email" id="login-email" placeholder="Email" required>
+        <input type="password" id="login-password" placeholder="Password" required>
+        <button type="submit" class="btn-primary">Login</button>
+        <button type="button" id="google-login-btn" class="btn-google">Login with Google</button>
+        <p>Don't have an account? <a href="#" id="show-signup">Sign up</a></p>
+      </form>
     </div>
 
-    <script type="module" src="firebase-config.js"></script>
-    <script type="module" src="app.js"></script>
+    <!-- Signup Container -->
+    <div id="signup-container" class="auth-container" style="display: none;">
+      <h1>Young Farmers</h1>
+      <h2>Stock Management System</h2>
+      
+      <form id="signup-form" class="auth-form">
+        <h3>Sign Up</h3>
+        <input type="text" id="signup-name" placeholder="Full Name" required>
+        <input type="email" id="signup-email" placeholder="Email" required>
+        <input type="password" id="signup-password" placeholder="Password (min 6 characters)" required minlength="6">
+        <button type="submit" class="btn-primary">Sign Up</button>
+        <button type="button" id="google-signup-btn" class="btn-google">Sign up with Google</button>
+        <p>Already have an account? <a href="#" id="show-login">Login</a></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Pending Approval Screen -->
+  <div id="pending-screen" class="screen" style="display: none;">
+    <div class="pending-container">
+      <h1>Account Pending Approval</h1>
+      <p>Your account has been created successfully. Please wait for an administrator to approve your account and assign you a role.</p>
+      <p>You will be able to access the system once approved.</p>
+      <button id="logout-btn" class="btn-secondary">Logout</button>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="main-app" class="screen" style="display: none;">
+    
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-content">
+        <h1>Young Farmers Stock Management</h1>
+        <div class="user-info">
+          <span id="user-name"></span> | 
+          <span id="user-role"></span> | 
+          <span id="user-shop"></span>
+          <button id="logout-btn" class="btn-secondary">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav class="app-nav">
+      <button id="dashboard-nav-btn" class="nav-btn active">Dashboard</button>
+      <button id="stock-nav-btn" class="nav-btn">Stock Management</button>
+      <button id="reports-nav-btn" class="nav-btn">Reports</button>
+      <button id="stock-value-nav-btn" class="nav-btn">Stock Value</button>
+      <button id="admin-nav-btn" class="nav-btn" style="display: none;">Admin Panel</button>
+    </nav>
+
+    <!-- Dashboard Section -->
+    <section id="dashboard-section" class="app-section">
+      <h2>Dashboard</h2>
+      <div class="dashboard-grid">
+        <div class="dashboard-card">
+          <h3>Total Stock Value</h3>
+          <p class="dashboard-value" id="total-stock">KSh 0</p>
+        </div>
+        <div class="dashboard-card">
+          <h3>Today's Sales</h3>
+          <p class="dashboard-value" id="total-sales">KSh 0</p>
+        </div>
+        <div class="dashboard-card">
+          <h3>Total Debtors</h3>
+          <p class="dashboard-value" id="total-debtors">KSh 0</p>
+        </div>
+        <div class="dashboard-card">
+          <h3>Total Creditors</h3>
+          <p class="dashboard-value" id="total-creditors">0 bags</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stock Management Section -->
+    <section id="stock-section" class="app-section" style="display: none;">
+      <h2>Stock Management</h2>
+      
+      <div class="controls">
+        <select id="shop-selector">
+          <option value="">Select Shop</option>
+        </select>
+        <input type="date" id="stock-date">
+      </div>
+
+      <div class="stock-table-container">
+        <h3>Closing Stock</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Opening Stock</th>
+              <th>Restocking</th>
+              <th>Closing Stock</th>
+              <th>Sales</th>
+              <th>Cash</th>
+            </tr>
+          </thead>
+          <tbody id="stock-table-body"></tbody>
+        </table>
+        <div class="total-row">
+          <strong>Total Cash:</strong> <span id="total-cash-display">KSh 0</span>
+        </div>
+        <button id="save-stock-btn" class="btn-primary">Save Stock Data</button>
+      </div>
+
+      <!-- Sales Made on Credit -->
+      <div class="transaction-section">
+        <h3>Sales Made on Credit</h3>
+        <div class="form-grid">
+          <input type="text" id="credit-client-name" placeholder="Client Name">
+          <select id="credit-feed-type">
+            <option value="">Select Feed Type</option>
+            <option value="Starter Mash">Starter Mash</option>
+            <option value="Samakgro 1MM">Samakgro 1MM</option>
+            <option value="Samakgro 2MM">Samakgro 2MM</option>
+            <option value="Samakgro 3MM">Samakgro 3MM</option>
+            <option value="Samakgro 4MMHP">Samakgro 4MMHP</option>
+            <option value="Samakgro 4.5MM">Samakgro 4.5MM</option>
+            <option value="Broodstock">Broodstock</option>
+          </select>
+          <input type="number" id="credit-bags" placeholder="Number of Bags" min="0" step="0.1">
+          <input type="number" id="credit-paid" placeholder="Amount Paid" min="0">
+          <button id="add-credit-sale-btn" class="btn-primary">Save</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Client Name</th>
+              <th>Feed Type</th>
+              <th>Bags</th>
+              <th>Total Amount</th>
+              <th>Paid</th>
+              <th>Remaining</th>
+            </tr>
+          </thead>
+          <tbody id="credit-sales-list"></tbody>
+        </table>
+      </div>
+
+      <!-- Prepayments Made -->
+      <div class="transaction-section">
+        <h3>Prepayments Made</h3>
+        <div class="form-grid">
+          <input type="text" id="prepay-client-name" placeholder="Client Name">
+          <select id="prepay-feed-type">
+            <option value="">Select Feed Type</option>
+            <option value="Starter Mash">Starter Mash</option>
+            <option value="Samakgro 1MM">Samakgro 1MM</option>
+            <option value="Samakgro 2MM">Samakgro 2MM</option>
+            <option value="Samakgro 3MM">Samakgro 3MM</option>
+            <option value="Samakgro 4MMHP">Samakgro 4MMHP</option>
+            <option value="Samakgro 4.5MM">Samakgro 4.5MM</option>
+            <option value="Broodstock">Broodstock</option>
+          </select>
+          <input type="number" id="prepay-amount" placeholder="Amount Paid" min="0">
+          <button id="add-prepayment-btn" class="btn-primary">Save</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Client Name</th>
+              <th>Feed Type</th>
+              <th>Total Bags</th>
+              <th>Amount Paid</th>
+              <th>Remaining Bags</th>
+            </tr>
+          </thead>
+          <tbody id="prepayments-list"></tbody>
+        </table>
+      </div>
+
+      <!-- Payments Made Towards Debts -->
+      <div class="transaction-section">
+        <h3>Payments Made Towards Debts</h3>
+        <div class="form-grid">
+          <input type="text" id="debt-client-name" placeholder="Client Name">
+          <input type="number" id="debt-amount" placeholder="Amount Paid" min="0">
+          <select id="debt-method">
+            <option value="">Payment Method</option>
+            <option value="Cash">Cash</option>
+            <option value="M-Pesa">M-Pesa</option>
+            <option value="Bank">Bank</option>
+          </select>
+          <button id="add-debt-payment-btn" class="btn-primary">Save</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Client Name</th>
+              <th>Amount Paid</th>
+              <th>Payment Method</th>
+            </tr>
+          </thead>
+          <tbody id="debt-payments-list"></tbody>
+        </table>
+      </div>
+
+      <!-- Feeds Released to Creditors -->
+      <div class="transaction-section">
+        <h3>Feeds Released to Creditors</h3>
+        <div class="form-grid">
+          <input type="text" id="release-client-name" placeholder="Client Name">
+          <select id="release-feed-type">
+            <option value="">Select Feed Type</option>
+            <option value="Starter Mash">Starter Mash</option>
+            <option value="Samakgro 1MM">Samakgro 1MM</option>
+            <option value="Samakgro 2MM">Samakgro 2MM</option>
+            <option value="Samakgro 3MM">Samakgro 3MM</option>
+            <option value="Samakgro 4MMHP">Samakgro 4MMHP</option>
+            <option value="Samakgro 4.5MM">Samakgro 4.5MM</option>
+            <option value="Broodstock">Broodstock</option>
+          </select>
+          <input type="number" id="release-bags" placeholder="Number of Bags" min="0" step="0.1">
+          <button id="add-feed-release-btn" class="btn-primary">Save</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Client Name</th>
+              <th>Feed Type</th>
+              <th>Bags Released</th>
+            </tr>
+          </thead>
+          <tbody id="feed-releases-list"></tbody>
+        </table>
+      </div>
+
+      <!-- Transfers to Other Shops -->
+      <div class="transaction-section">
+        <h3>Transfers to Other Shops</h3>
+        <div class="form-grid">
+          <select id="transfer-to-shop">
+            <option value="">Select Destination Shop</option>
+            <option value="Usigu">Usigu</option>
+            <option value="Port Victoria">Port Victoria</option>
+            <option value="Mbita">Mbita</option>
+            <option value="Usenge">Usenge</option>
+            <option value="Lwanda Kotieno">Lwanda Kotieno</option>
+            <option value="Obambo">Obambo</option>
+            <option value="Sori">Sori</option>
+          </select>
+          <select id="transfer-feed-type">
+            <option value="">Select Feed Type</option>
+            <option value="Starter Mash">Starter Mash</option>
+            <option value="Samakgro 1MM">Samakgro 1MM</option>
+            <option value="Samakgro 2MM">Samakgro 2MM</option>
+            <option value="Samakgro 3MM">Samakgro 3MM</option>
+            <option value="Samakgro 4MMHP">Samakgro 4MMHP</option>
+            <option value="Samakgro 4.5MM">Samakgro 4.5MM</option>
+            <option value="Broodstock">Broodstock</option>
+          </select>
+          <input type="number" id="transfer-bags" placeholder="Number of Bags" min="0" step="0.1">
+          <button id="add-transfer-btn" class="btn-primary">Save</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>To Shop</th>
+              <th>Feed Type</th>
+              <th>Bags Transferred</th>
+            </tr>
+          </thead>
+          <tbody id="transfers-list"></tbody>
+        </table>
+      </div>
+
+      <!-- Client Details for Regular Sales -->
+      <div class="transaction-section">
+        <h3>Client Details for Regular Sales</h3>
+        <div class="form-grid">
+          <input type="text" id="client-name" placeholder="Client Name">
+          <select id="client-feed-type">
+            <option value="">Select Feed Type</option>
+            <option value="Starter Mash">Starter Mash</option>
+            <option value="Samakgro 1MM">Samakgro 1MM</option>
+            <option value="Samakgro 2MM">Samakgro 2MM</option>
+            <option value="Samakgro 3MM">Samakgro 3MM</option>
+            <option value="Samakgro 4MMHP">Samakgro 4MMHP</option>
+            <option value="Samakgro 4.5MM">Samakgro 4.5MM</option>
+            <option value="Broodstock">Broodstock</option>
+          </select>
+          <input type="number" id="client-bags" placeholder="Number of Bags" min="0" step="0.1">
+          <button id="add-client-btn" class="btn-primary">Save</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Client Name</th>
+              <th>Feed Type</th>
+              <th>Bags</th>
+              <th>Total Amount</th>
+            </tr>
+          </thead>
+          <tbody id="clients-list"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Reports Section -->
+    <section id="reports-section" class="app-section" style="display: none;">
+      <h2>Reports</h2>
+      <div class="export-buttons">
+        <button id="export-doc1-btn" class="btn-primary">Export Doc1 Format (Shop Report)</button>
+        <button id="export-doc2-btn" class="btn-primary">Export Doc2 Format (Financial Summary)</button>
+      </div>
+      <div id="reports-content"></div>
+    </section>
+
+    <!-- Stock Value Section -->
+    <section id="stock-value-section" class="app-section" style="display: none;">
+      <h2>Stock Value Analysis</h2>
+      <div id="stock-value-content"></div>
+    </section>
+
+    <!-- Admin Section -->
+    <section id="admin-section" class="app-section" style="display: none;">
+      <h2>Admin Panel - User Management</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Assigned Shop</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="users-table-body"></tbody>
+      </table>
+    </section>
+
+  </div>
+
+  <script type="module" src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js');
+    }
+  </script>
 </body>
 </html>
