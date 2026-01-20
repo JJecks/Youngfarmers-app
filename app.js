@@ -114,9 +114,9 @@ function setupAuthListeners() {
   const toggleAuth = document.getElementById('toggle-auth');
   const googleSignin = document.getElementById('google-signin');
   
-  authForm.addEventListener('submit', handleAuthSubmit);
-  toggleAuth.addEventListener('click', toggleAuthMode);
-  googleSignin.addEventListener('click', handleGoogleSignin);
+  if (authForm) authForm.addEventListener('submit', handleAuthSubmit);
+  if (toggleAuth) toggleAuth.addEventListener('click', toggleAuthMode);
+  if (googleSignin) googleSignin.addEventListener('click', handleGoogleSignin);
 }
 
 let isSignUp = false;
