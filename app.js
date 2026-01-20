@@ -1216,68 +1216,567 @@ function loadReportsPage() {
   `;
 }
 
-// PDF Export functions using jsPDF
+// Replace the exportDoc1() and exportDoc2() functions in app.js Part 3 with these:
+
+// Helper function to format date as "19th JAN 2026"
+function formatDateForPDF(dateString) {
+  const date = new Date(dateString);
+  const day = date.getDate();
+  const month = date.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+  const year = date.getFullYear();
+  
+  // Add ordinal suffix (st, nd, rd, th)
+  let suffix = 'th';
+  if (day === 1 || day === 21 || day === 31) suffix = 'st';
+  else if (day === 2 || day === 22) suffix = 'nd';
+  else if (day === 3 || day === 23) suffix = 'rd';
+  
+  return `${day}${suffix} ${month} ${year}`;
+}
+
+// DOC1 EXPORT - Individual Shop Reports (All shops in one PDF)
 async function exportDoc1() {
   try {
-    // Import jsPDF
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    
-    const selectedShop = document.getElementById('shop-selector').value;
+    if (!jsPDF) {
+      showError('PDF library not loaded. Please refresh the page.');
+      return;
+    }
+
     const selectedDate = document.getElementById('stock-date').value;
-    
-    // Title
-    doc.setFontSize(16);
-    doc.text(`Stock Report - ${selectedShop}`, 20, 20);
-    doc.setFontSize(12);
-    doc.text(`Date: ${selectedDate}`, 20, 30);
-    
-    // Get stock data
-    const stockRef = doc(db, 'stock', `${selectedShop}_${selectedDate}`);
-    const stockDoc = await getDoc(stockRef);
-    
-    if (stockDoc.exists()) {
-      const stockData = stockDoc.data();
+    if (!selectedDate) {
+      showError('Please select a date first');
+      return;
+    }
+
+    const pdf = new jsPDF();
+    const formattedDate = formatDateForPDF(selectedDate);
+    let isFirstPage = true;
+
+    // Get all shops data
+    for (const shop of SHOPS) {
+      // Skip if attendant and not their shop
+      if (currentUserData.role === 'attendant' && currentUserData.assignedShop !== shop) {
+        continue;
+      }
+
+      // Add new page for each shop (except first)
+      if (!isFirstPage) {
+        pdf.addPage();
+      }
+      isFirstPage = false;
+
+      // Get stock data
+      const stockRef = doc(db, 'stock', `${shop}_${selectedDate}`);
+      const stockDoc = await getDoc(stockRef);
+
+      let stockData = {
+        openingStock: {},
+        restocking: {},
+        closingStock: {},
+        sales: {},
+        totalCash: 0
+      };
+
+      if (stockDoc.exists()) {
+        stockData = stockDoc.data();
+      }
+
+      // Shop Header
+      pdf.setFontSize(14);
+      pdf.setFont(undefined, 'bold');
+      pdf.text(`${shop.toUpperCase()} SHOP`, 105, 15, { align: 'center' });
+      pdf.setFontSize(12);
+      pdf.text(formattedDate, 105, 23, { align: 'center' });
+      pdf.setFont(undefined, 'normal');
+      pdf.setFontSize(11);
+      pdf.text('TOTAL STOCK VALUE AND SALES', 105, 30, { align: 'center' });
+
+      // Table Headers
+      let y = 45;
+      pdf.setFontSize(9);
+      pdf.setFont(undefined, 'bold');
       
-      let y = 50;
-      doc.text('Product', 20, y);
-      doc.text('Opening', 70, y);
-      doc.text('Restocking', 100, y);
-      doc.text('Closing', 135, y);
-      doc.text('Sales', 165, y);
-      
-      y += 10;
-      
-      PRODUCTS.forEach(product => {
+      // Column positions
+      const cols = {
+        no: 10,
+        product: 20,
+        opening: 70,
+        closing: 95,
+        cost: 115,
+        sales: 135,
+        salesQty: 155,
+        salesAmt: 175,
+        stockVal: 195
+      };
+
+      // Headers
+      pdf.text('', cols.no, y);
+      pdf.text('Product', cols.product, y);
+      pdf.text('Opening Stock', cols.opening, y);
+      pdf.text('Closing Stock', cols.closing, y);
+      pdf.text('Cost Price', cols.cost, y);
+      pdf.text('Sales', cols.sales, y);
+      pdf.text('Quantity', cols.opening, y + 5);
+      pdf.text('Quantity', cols.closing, y + 5);
+      pdf.text('Sales', cols.salesQty, y);
+      pdf.text('Sales amt', cols.salesAmt, y);
+      pdf.text('Stock Value', cols.stockVal, y);
+
+      pdf.setFont(undefined, 'normal');
+      y += 12;
+
+      // Data rows
+      let totalOpeningBags = 0;
+      let totalClosingBags = 0;
+      let totalSalesQty = 0;
+      let totalSalesAmt = 0;
+      let totalStockValue = 0;
+
+      PRODUCTS.forEach((product, index) => {
         const opening = stockData.openingStock?.[product.name] || 0;
         const restocking = stockData.restocking?.[product.name] || 0;
         const closing = stockData.closingStock?.[product.name] || 0;
-        const sales = opening + restocking - closing;
-        
-        doc.text(product.name, 20, y);
-        doc.text(opening.toString(), 70, y);
-        doc.text(restocking.toString(), 100, y);
-        doc.text(closing.toString(), 135, y);
-        doc.text(sales.toString(), 165, y);
-        
-        y += 8;
+        const salesQty = opening + restocking - closing;
+        const salesAmt = salesQty * product.sales;
+        const stockValue = closing * product.cost;
+
+        totalOpeningBags += opening;
+        totalClosingBags += closing;
+        totalSalesQty += salesQty;
+        totalSalesAmt += salesAmt;
+        totalStockValue += stockValue;
+
+        pdf.text((index + 1).toString(), cols.no, y);
+        pdf.text(product.name, cols.product, y);
+        pdf.text(opening.toString(), cols.opening, y);
+        pdf.text(closing.toString(), cols.closing, y);
+        pdf.text(product.cost.toLocaleString(), cols.cost, y);
+        pdf.text(product.sales.toLocaleString(), cols.sales, y);
+        pdf.text(salesQty.toString(), cols.salesQty, y);
+        pdf.text(salesAmt.toLocaleString(), cols.salesAmt, y);
+        pdf.text(stockValue.toLocaleString(), cols.stockVal, y);
+
+        y += 7;
       });
-      
-      y += 10;
-      doc.text(`Total Cash: KSh ${stockData.totalCash.toLocaleString()}`, 20, y);
+
+      // Totals row
+      y += 3;
+      pdf.setFont(undefined, 'bold');
+      pdf.text(totalOpeningBags.toString(), cols.opening, y);
+      pdf.text(totalClosingBags.toString(), cols.closing, y);
+      pdf.text(totalSalesQty.toString(), cols.salesQty, y);
+      pdf.text(totalSalesAmt.toLocaleString(), cols.salesAmt, y);
+      pdf.text(totalStockValue.toLocaleString(), cols.stockVal, y);
     }
+
+    // Summary Page - All Shops
+    pdf.addPage();
+    pdf.setFontSize(14);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('SHOPS SUMMARY TOTALS', 105, 15, { align: 'center' });
+    pdf.setFontSize(12);
+    pdf.text(`SHOPS TOTALS ${formattedDate}`, 105, 23, { align: 'center' });
+
+    let y = 40;
+    pdf.setFontSize(10);
     
-    doc.save(`${selectedShop}_${selectedDate}_report.pdf`);
-    showSuccess('Report exported successfully!');
-    
+    // Summary table headers
+    pdf.text('INDEX', 15, y);
+    pdf.text('DATE', 35, y);
+    pdf.text('SHOP', 70, y);
+    pdf.text('BAGS', 120, y);
+    pdf.text('BAGS SOLD', 145, y);
+    pdf.text('SALES AMOUNT', 175, y);
+
+    pdf.setFont(undefined, 'normal');
+    y += 8;
+
+    let grandTotalBags = 0;
+    let grandTotalSold = 0;
+    let grandTotalSales = 0;
+
+    // Get summary data for each shop
+    let shopIndex = 1;
+    for (const shop of SHOPS) {
+      if (currentUserData.role === 'attendant' && currentUserData.assignedShop !== shop) {
+        continue;
+      }
+
+      const stockRef = doc(db, 'stock', `${shop}_${selectedDate}`);
+      const stockDoc = await getDoc(stockRef);
+
+      let totalBags = 0;
+      let totalSold = 0;
+      let totalSales = 0;
+
+      if (stockDoc.exists()) {
+        const stockData = stockDoc.data();
+        
+        PRODUCTS.forEach(product => {
+          const opening = stockData.openingStock?.[product.name] || 0;
+          const restocking = stockData.restocking?.[product.name] || 0;
+          const closing = stockData.closingStock?.[product.name] || 0;
+          const sold = opening + restocking - closing;
+          
+          totalBags += opening;
+          totalSold += sold;
+          totalSales += sold * product.sales;
+        });
+      }
+
+      grandTotalBags += totalBags;
+      grandTotalSold += totalSold;
+      grandTotalSales += totalSales;
+
+      const dateFormatted = new Date(selectedDate).toLocaleDateString('en-GB');
+      pdf.text(shopIndex.toString(), 15, y);
+      pdf.text(dateFormatted, 35, y);
+      pdf.text(shop, 70, y);
+      pdf.text(totalBags.toString(), 120, y);
+      pdf.text(totalSold.toString(), 145, y);
+      pdf.text(totalSales.toLocaleString(), 175, y);
+
+      y += 7;
+      shopIndex++;
+    }
+
+    // Grand total
+    y += 5;
+    pdf.setFont(undefined, 'bold');
+    pdf.setFontSize(12);
+    pdf.text('TOTAL SALES', 70, y);
+    pdf.text(grandTotalSales.toLocaleString(), 175, y);
+
+    // Save PDF
+    pdf.save(`YFarmers Stock Report as at ${formattedDate}.pdf`);
+    showSuccess('Stock Report exported successfully!');
+
   } catch (error) {
-    console.error('Error exporting PDF:', error);
-    showError('Error exporting PDF. Please ensure jsPDF library is loaded.');
+    console.error('Error exporting Doc1:', error);
+    showError('Error exporting PDF: ' + error.message);
   }
 }
 
+// DOC2 EXPORT - Stock Value Book (Financial Summary)
 async function exportDoc2() {
-  showError('Doc2 export feature coming soon!');
+  try {
+    const { jsPDF } = window.jspdf;
+    if (!jsPDF) {
+      showError('PDF library not loaded. Please refresh the page.');
+      return;
+    }
+
+    const selectedDate = document.getElementById('stock-date').value;
+    if (!selectedDate) {
+      showError('Please select a date first');
+      return;
+    }
+
+    const pdf = new jsPDF();
+    const formattedDate = formatDateForPDF(selectedDate);
+
+    // PAGE 1: TOTAL SALES SUMMARY
+    pdf.setFontSize(14);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
+    pdf.setFontSize(12);
+    pdf.text(`TOTAL SALES AS AT ${formattedDate}`, 105, 23, { align: 'center' });
+
+    let y = 40;
+    pdf.setFontSize(10);
+    pdf.setFont(undefined, 'normal');
+
+    // Sales Summary Table
+    pdf.text('INDEX', 15, y);
+    pdf.text('DATE', 35, y);
+    pdf.text('SHOP', 70, y);
+    pdf.text('BAGS', 120, y);
+    pdf.text('BAGS SOLD', 145, y);
+    pdf.text('SALES AMOUNT', 175, y);
+
+    y += 8;
+
+    let totalSales = 0;
+    let shopIndex = 1;
+
+    for (const shop of SHOPS) {
+      const stockRef = doc(db, 'stock', `${shop}_${selectedDate}`);
+      const stockDoc = await getDoc(stockRef);
+
+      let shopBags = 0;
+      let shopSold = 0;
+      let shopSales = 0;
+
+      if (stockDoc.exists()) {
+        const stockData = stockDoc.data();
+        PRODUCTS.forEach(product => {
+          const opening = stockData.openingStock?.[product.name] || 0;
+          const restocking = stockData.restocking?.[product.name] || 0;
+          const closing = stockData.closingStock?.[product.name] || 0;
+          const sold = opening + restocking - closing;
+          
+          shopBags += opening;
+          shopSold += sold;
+          shopSales += sold * product.sales;
+        });
+      }
+
+      totalSales += shopSales;
+
+      const dateFormatted = new Date(selectedDate).toLocaleDateString('en-GB');
+      pdf.text(shopIndex.toString(), 15, y);
+      pdf.text(dateFormatted, 35, y);
+      pdf.text(shop, 70, y);
+      pdf.text(shopBags.toString(), 120, y);
+      pdf.text(shopSold.toString(), 145, y);
+      pdf.text(shopSales.toLocaleString(), 175, y);
+
+      y += 7;
+      shopIndex++;
+    }
+
+    // Get additional financial data
+    let prepayments = 0;
+    let debtPayments = 0;
+    let underPayments = 0;
+    let discounts = 0;
+
+    // Calculate prepayments
+    const prepayQuery = query(collection(db, 'prepayments'), where('date', '==', selectedDate));
+    const prepayDocs = await getDocs(prepayQuery);
+    prepayDocs.forEach(doc => {
+      prepayments += doc.data().amountPaid || 0;
+    });
+
+    // Calculate debt payments
+    const debtQuery = query(collection(db, 'debtPayments'), where('date', '==', selectedDate));
+    const debtDocs = await getDocs(debtQuery);
+    debtDocs.forEach(doc => {
+      debtPayments += doc.data().amountPaid || 0;
+    });
+
+    // Sales breakdown
+    y += 10;
+    pdf.setFont(undefined, 'bold');
+    pdf.text('SALES TOTALS', 15, y);
+    y += 8;
+    pdf.setFont(undefined, 'normal');
+    pdf.text(totalSales.toLocaleString(), 175, y);
+    y += 7;
+    pdf.text('PREPAYMENTS', 15, y);
+    pdf.text(prepayments.toLocaleString(), 175, y);
+    y += 7;
+    pdf.text('DEBT PAYMENTS MADE', 15, y);
+    pdf.text(debtPayments.toLocaleString(), 175, y);
+    y += 7;
+    pdf.text('UNDER-PAYMENTS', 15, y);
+    pdf.text(underPayments.toLocaleString(), 175, y);
+    y += 7;
+    pdf.text('DISCOUNTS GIVEN', 15, y);
+    pdf.text(discounts.toLocaleString(), 175, y);
+    y += 10;
+    pdf.setFont(undefined, 'bold');
+    pdf.text('TOTAL SALES', 15, y);
+    const finalTotal = totalSales + prepayments + debtPayments - underPayments - discounts;
+    pdf.text(finalTotal.toLocaleString(), 175, y);
+
+    // PAGE 2: DEBTORS
+    pdf.addPage();
+    pdf.setFontSize(14);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
+    pdf.setFontSize(12);
+    pdf.text('DEBTORS', 105, 23, { align: 'center' });
+
+    y = 40;
+    pdf.setFontSize(10);
+    pdf.setFont(undefined, 'normal');
+
+    // Debtors table headers
+    pdf.text('CLIENT', 15, y);
+    pdf.text('FEEDS', 70, y);
+    pdf.text('BAGS', 100, y);
+    pdf.text('PRICE', 120, y);
+    pdf.text('AMOUNT', 145, y);
+    pdf.text('PAID', 170, y);
+    pdf.text('BALANCE', 190, y);
+
+    y += 8;
+
+    let totalDebtors = 0;
+
+    // Get credit sales (debtors)
+    const creditQuery = query(
+      collection(db, 'creditSales'),
+      where('status', '==', 'pending')
+    );
+    const creditDocs = await getDocs(creditQuery);
+    
+    creditDocs.forEach(docSnapshot => {
+      const data = docSnapshot.data();
+      pdf.text(data.clientName || '', 15, y);
+      pdf.text(data.feedType || '', 70, y);
+      pdf.text((data.bags || 0).toString(), 100, y);
+      pdf.text((data.totalAmount / data.bags).toLocaleString(), 120, y);
+      pdf.text((data.totalAmount || 0).toLocaleString(), 145, y);
+      pdf.text((data.paidAmount || 0).toLocaleString(), 170, y);
+      pdf.text((data.remainingAmount || 0).toLocaleString(), 190, y);
+      
+      totalDebtors += data.remainingAmount || 0;
+      y += 7;
+      
+      if (y > 270) {
+        pdf.addPage();
+        y = 20;
+      }
+    });
+
+    y += 5;
+    pdf.setFont(undefined, 'bold');
+    pdf.text('TOTAL', 15, y);
+    pdf.text(totalDebtors.toLocaleString(), 190, y);
+
+    // PAGE 3: CREDITORS
+    pdf.addPage();
+    pdf.setFontSize(14);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
+    pdf.setFontSize(12);
+    pdf.text('CREDITORS VALUE', 105, 23, { align: 'center' });
+
+    y = 40;
+    pdf.setFontSize(10);
+    pdf.setFont(undefined, 'normal');
+
+    // Creditors table headers
+    pdf.text('INDEX', 15, y);
+    pdf.text('DATE', 35, y);
+    pdf.text('SHOP', 70, y);
+    pdf.text('FEED', 110, y);
+    pdf.text('BAGS', 140, y);
+    pdf.text('PRICE', 165, y);
+    pdf.text('VALUE', 190, y);
+
+    y += 8;
+
+    let totalCreditorsValue = 0;
+    let creditorIndex = 1;
+
+    // Get prepayments (creditors)
+    const allPrepayQuery = query(
+      collection(db, 'prepayments'),
+      where('status', '==', 'pending')
+    );
+    const allPrepayDocs = await getDocs(allPrepayQuery);
+    
+    allPrepayDocs.forEach(docSnapshot => {
+      const data = docSnapshot.data();
+      const product = PRODUCTS.find(p => p.name === data.feedType);
+      const value = (data.remainingBags || 0) * (product?.cost || 0);
+      
+      const dateFormatted = new Date(data.date).toLocaleDateString('en-GB');
+      pdf.text(creditorIndex.toString(), 15, y);
+      pdf.text(dateFormatted, 35, y);
+      pdf.text(data.shop || '', 70, y);
+      pdf.text(data.feedType || '', 110, y);
+      pdf.text((data.remainingBags || 0).toString(), 140, y);
+      pdf.text((product?.cost || 0).toLocaleString(), 165, y);
+      pdf.text(value.toLocaleString(), 190, y);
+      
+      totalCreditorsValue += value;
+      creditorIndex++;
+      y += 7;
+      
+      if (y > 270) {
+        pdf.addPage();
+        y = 20;
+      }
+    });
+
+    y += 5;
+    pdf.setFont(undefined, 'bold');
+    pdf.text('CREDITORS VALUE', 15, y);
+    pdf.text(totalCreditorsValue.toLocaleString(), 190, y);
+
+    // PAGE 4: STOCK VALUE SUMMARY
+    pdf.addPage();
+    pdf.setFontSize(14);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('YOUNG FARMERS AGENCIES LTD', 105, 15, { align: 'center' });
+    pdf.setFontSize(12);
+    pdf.text(`STOCK VALUE AS AT ${formattedDate}`, 105, 23, { align: 'center' });
+
+    y = 40;
+    pdf.setFontSize(10);
+    pdf.setFont(undefined, 'normal');
+
+    // Stock value table
+    pdf.text('INDEX', 15, y);
+    pdf.text('DATE', 35, y);
+    pdf.text('SHOP', 70, y);
+    pdf.text('BAGS', 140, y);
+    pdf.text('VALUE', 180, y);
+
+    y += 8;
+
+    let totalStockValue = 0;
+    shopIndex = 1;
+
+    for (const shop of SHOPS) {
+      const stockRef = doc(db, 'stock', `${shop}_${selectedDate}`);
+      const stockDoc = await getDoc(stockRef);
+
+      let shopValue = 0;
+      let shopBags = 0;
+
+      if (stockDoc.exists()) {
+        const stockData = stockDoc.data();
+        PRODUCTS.forEach(product => {
+          const closing = stockData.closingStock?.[product.name] || 0;
+          shopBags += closing;
+          shopValue += closing * product.cost;
+        });
+      }
+
+      totalStockValue += shopValue;
+
+      const dateFormatted = new Date(selectedDate).toLocaleDateString('en-GB');
+      pdf.text(shopIndex.toString(), 15, y);
+      pdf.text(dateFormatted, 35, y);
+      pdf.text(shop, 70, y);
+      pdf.text(shopBags.toString(), 140, y);
+      pdf.text(shopValue.toLocaleString(), 180, y);
+
+      y += 7;
+      shopIndex++;
+    }
+
+    // Final summary
+    y += 10;
+    pdf.setFont(undefined, 'bold');
+    pdf.text('TOTAL', 70, y);
+    pdf.text(totalStockValue.toLocaleString(), 180, y);
+    y += 10;
+    pdf.text('DEBTORS VALUE', 70, y);
+    pdf.text(totalDebtors.toLocaleString(), 180, y);
+    y += 10;
+    pdf.text('CREDITORS VALUE', 70, y);
+    pdf.text(totalCreditorsValue.toLocaleString(), 180, y);
+    y += 10;
+    const netValue = totalStockValue + totalDebtors - totalCreditorsValue;
+    pdf.setFontSize(12);
+    pdf.text('NET VALUE', 70, y);
+    pdf.text(`Ksh ${netValue.toLocaleString()}.00`, 180, y);
+
+    // Save PDF
+    pdf.save('YFarmers Stock Value Book.pdf');
+    showSuccess('Stock Value Book exported successfully!');
+
+  } catch (error) {
+    console.error('Error exporting Doc2:', error);
+    showError('Error exporting PDF: ' + error.message);
+  }
 }
 
 // Admin panel functions
