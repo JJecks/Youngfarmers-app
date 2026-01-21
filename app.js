@@ -756,16 +756,7 @@ function showTransactionForm(formId, shop) {
                 toShop: document.getElementById('form-to').value
             });
         };
-    }
-    
-    document.querySelectorAll('.btn-cancel').forEach(btn => {
-        btn.onclick = () => container.innerHTML = '';
-    });
-}
-function showTransactionForm(formId, shop) {
-    const container = document.getElementById('form-container');
-    
-    if (formId === 'creditSale') {
+    } else if (formId === 'creditSale') {
         container.innerHTML = `
             <div class="form-box" style="border-color: #c62828;">
                 <h4 style="color: #c62828;">Sales Made on Credit</h4>
@@ -871,6 +862,96 @@ function showTransactionForm(formId, shop) {
     document.querySelectorAll('.btn-cancel').forEach(btn => {
         btn.onclick = () => container.innerHTML = '';
     });
+}
+
+async function loadCreditorsForRelease(shop) {
+    const creditors = new Set();
+    const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+    const snapshot = await getDocs(shopQuery);
+    
+    snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.prepayments) {
+            Object.values(data.prepayments).forEach(p => {
+                creditors.add(p.clientName);
+            });
+        }
+    });
+
+    const creditorSelect = document.getElementById('form-creditor');
+    const form = document.getElementById('transaction-form');
+    const loading = document.getElementById('creditor-loading');
+
+    if (creditors.size === 0) {
+        loading.textContent = 'No creditors available. Record prepayments first.';
+        loading.style.color = '#856404';
+        loading.style.background = '#fff3cd';
+        loading.style.padding = '10px';
+        loading.style.borderRadius = '5px';
+    } else {
+        creditors.forEach(c => {
+            const option = document.createElement('option');
+            option.value = c;
+            option.textContent = c;
+            creditorSelect.appendChild(option);
+        });
+        loading.style.display = 'none';
+        form.style.display = 'grid';
+        
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            await saveTransaction(shop, currentDate, 'creditorReleases', {
+                creditorName: document.getElementById('form-creditor').value,
+                feedType: document.getElementById('form-feed').value,
+                bags: document.getElementById('form-bags').value
+            });
+        };
+    }
+}
+
+async function loadDebtorsForPayment(shop) {
+    const debtors = new Set();
+    const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+    const snapshot = await getDocs(shopQuery);
+    
+    snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.creditSales) {
+            Object.values(data.creditSales).forEach(s => {
+                debtors.add(s.debtorName);
+            });
+        }
+    });
+
+    const debtorSelect = document.getElementById('form-debtor');
+    const form = document.getElementById('transaction-form');
+    const loading = document.getElementById('debtor-loading');
+
+    if (debtors.size === 0) {
+        loading.textContent = 'No debtors available. Record credit sales first.';
+        loading.style.color = '#856404';
+        loading.style.background = '#fff3cd';
+        loading.style.padding = '10px';
+        loading.style.borderRadius = '5px';
+    } else {
+        debtors.forEach(d => {
+            const option = document.createElement('option');
+            option.value = d;
+            option.textContent = d;
+            debtorSelect.appendChild(option);
+        });
+        loading.style.display = 'none';
+        form.style.display = 'grid';
+        
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            await saveTransaction(shop, currentDate, 'debtPayments', {
+                debtorName: document.getElementById('form-debtor').value,
+                amountPaid: document.getElementById('form-amount').value,
+                paymentMethod: document.getElementById('form-method').value
+            });
+        };
+    }
 }
 
 async function loadCreditorsForRelease(shop) {
