@@ -210,27 +210,48 @@ function setupAuthListeners() {
     googleSignin.addEventListener('click', async () => {
         try {
             const provider = new GoogleAuthProvider();
+            provider.setCustomParameters({
+                prompt: 'select_account'
+            });
+        
             const result = await signInWithPopup(auth, provider);
             const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+            
             if (!userDoc.exists()) {
                 const isAdmin = result.user.email === ADMIN_EMAIL;
                 await setDoc(doc(db, 'users', result.user.uid), {
                     email: result.user.email,
-                    name: result.user.displayName,
+                    name: result.user.displayName || result.user.email,
                     role: isAdmin ? 'manager_full' : 'pending',
                     status: isAdmin ? 'active' : 'pending',
                     shop: null,
                     createdAt: new Date().toISOString()
                 });
             }
-            showToast('Signed in with Google!', 'success');
+        
+            // Force reload user data
+            const updatedUserDoc = await getDoc(doc(db, 'users', result.user.uid));
+            if (updatedUserDoc.exists()) {
+                currentUserData = updatedUserDoc.data();
+            
+                if (currentUserData.status === 'pending') {
+                    showToast('Account pending approval. Please contact admin.', 'success');
+                } else {
+                    showToast('Signed in with Google!', 'success');
+                }
+            }
         } catch (error) {
-            showToast(error.message, 'error');
+            if (error.code === 'auth/popup-blocked') {
+                showToast('Please allow popups for this site and try again', 'error');
+            } else if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
+                showToast('Sign-in cancelled', 'error');
+            } else {
+                showToast(error.message, 'error');
+            }
         }
     });
-
-    document.getElementById('pending-signout').addEventListener('click', async () => {
-        await signOut(auth);
+        document.getElementById('pending-signout').addEventListener('click', async () => {
+            await signOut(auth);
     });
 }
 function loadDashboard() {
@@ -1346,10 +1367,583 @@ async function loadAdminPanel() {
     });
 }
 
-document.getElementById('export-doc1').addEventListener('click', () => {
-    showToast('PDF export feature - Add jsPDF implementation here', 'success');
+// PDF Export Button Handlers
+document.getElementById('export-doc1').addEventListener('click', async () => {
+    await generateDoc1PDF(currentDate);
 });
 
-document.getElementById('export-doc2').addEventListener('click', () => {
-    showToast('PDF export feature - Add jsPDF implementation here', 'success');
+document.getElementById('export-doc2').addEventListener('click', async () => {
+    await generateDoc2PDF();
 });
+
+// DOC1: Stock Report PDF
+async function generateDoc1PDF(date) {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF();
+
+    showToast('Generating PDF...', 'success');
+
+    // Generate a page for each shop
+    for (let shopIndex = 0; shopIndex < SHOPS.length; shopIndex++) {
+        const shop = SHOPS[shopIndex];
+        
+        if (shopIndex > 0) {
+            pdf.addPage();
+        }
+
+        let yPosition = 20;
+
+        // Shop header
+        pdf.setFontSize(16);
+        pdf.setFont(undefined, 'bold');
+        pdf.text(shop, 105, yPosition, { align: 'center' });
+        yPosition += 10;
+
+        pdf.setFontSize(12);
+        pdf.setFont(undefined, 'normal');
+        pdf.text(`Date: ${formatDateDisplay(date)}`, 105, yPosition, { align: 'center' });
+        yPosition += 10;
+
+        // Get shop data from Firestore
+        const shopDocRef = doc(db, 'shops', shop, 'daily', date);
+        const shopDoc = await getDoc(shopDocRef);
+
+        const tableData = [];
+        let totalSalesAmount = 0;
+        let totalStockValue = 0;
+
+        if (shopDoc.exists()) {
+            const data = shopDoc.data();
+            const openingStock = data.openingStock || {};
+            const closing = calculateClosingStock(data);
+
+            productsData.forEach((product, idx) => {
+                const opening = openingStock[product.id] || 0;
+                const restocking = calculateRestocking(data, product.id);
+                const sold = calculateSold(data, product.id);
+                const closingQty = closing[product.id] || 0;
+                const salesAmount = sold * product.sales;
+                const stockValue = closingQty * product.cost;
+
+                totalSalesAmount += salesAmount;
+                totalStockValue += stockValue;
+
+                tableData.push([
+                    idx + 1,
+                    product.name,
+                    opening.toFixed(1),
+                    closingQty.toFixed(1),
+                    `KSh ${product.cost.toLocaleString()}`,
+                    `KSh ${product.sales.toLocaleString()}`,
+                    sold.toFixed(1),
+                    `KSh ${salesAmount.toLocaleString()}`,
+                    `KSh ${stockValue.toLocaleString()}`
+                ]);
+            });
+        } else {
+            // If no data exists for this shop on this date, show zeros
+            productsData.forEach((product, idx) => {
+                tableData.push([
+                    idx + 1,
+                    product.name,
+                    '0.0',
+                    '0.0',
+                    `KSh ${product.cost.toLocaleString()}`,
+                    `KSh ${product.sales.toLocaleString()}`,
+                    '0.0',
+                    'KSh 0',
+                    'KSh 0'
+                ]);
+            });
+        }
+
+        // Add totals row
+        tableData.push([
+            '',
+            'TOTAL',
+            '',
+            '',
+            '',
+            '',
+            '',
+            `KSh ${totalSalesAmount.toLocaleString()}`,
+            `KSh ${totalStockValue.toLocaleString()}`
+        ]);
+
+        // Draw table using autoTable
+        pdf.autoTable({
+            startY: yPosition,
+            head: [['#', 'Product', 'Opening', 'Closing', 'Cost Price', 'Sales Price', 'Sales Qty', 'Sales Amount', 'Stock Value']],
+            body: tableData,
+            theme: 'grid',
+            headStyles: { 
+                fillColor: [46, 125, 50], 
+                textColor: 255, 
+                fontStyle: 'bold',
+                halign: 'center'
+            },
+            styles: { 
+                fontSize: 8,
+                cellPadding: 2
+            },
+            columnStyles: {
+                0: { cellWidth: 10, halign: 'center' },
+                1: { cellWidth: 28 },
+                2: { cellWidth: 18, halign: 'right' },
+                3: { cellWidth: 18, halign: 'right' },
+                4: { cellWidth: 22, halign: 'right' },
+                5: { cellWidth: 22, halign: 'right' },
+                6: { cellWidth: 18, halign: 'right' },
+                7: { cellWidth: 28, halign: 'right' },
+                8: { cellWidth: 28, halign: 'right' }
+            },
+            didParseCell: function(data) {
+                if (data.row.index === tableData.length - 1) {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [245, 245, 245];
+                }
+            }
+        });
+    }
+
+    // Add summary page
+    pdf.addPage();
+    let summaryY = 20;
+
+    pdf.setFontSize(16);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('SHOPS SUMMARY TOTALS', 105, summaryY, { align: 'center' });
+    summaryY += 15;
+
+    // Collect summary data
+    const summaryData = [];
+    let grandTotalBags = 0;
+    let grandTotalSold = 0;
+    let grandTotalSales = 0;
+
+    for (let shopIndex = 0; shopIndex < SHOPS.length; shopIndex++) {
+        const shop = SHOPS[shopIndex];
+        const shopDocRef = doc(db, 'shops', shop, 'daily', date);
+        const shopDoc = await getDoc(shopDocRef);
+
+        if (shopDoc.exists()) {
+            const data = shopDoc.data();
+            const closing = calculateClosingStock(data);
+            const bagsRemaining = Object.values(closing).reduce((a, b) => a + b, 0);
+
+            let bagsSold = 0;
+            let salesAmount = 0;
+
+            productsData.forEach(product => {
+                const sold = calculateSold(data, product.id);
+                bagsSold += sold;
+                salesAmount += sold * product.sales;
+            });
+
+            grandTotalBags += bagsRemaining;
+            grandTotalSold += bagsSold;
+            grandTotalSales += salesAmount;
+
+            summaryData.push([
+                shopIndex + 1,
+                formatDateDisplay(date),
+                shop,
+                bagsRemaining.toFixed(1),
+                bagsSold.toFixed(1),
+                `KSh ${salesAmount.toLocaleString()}`
+            ]);
+        } else {
+            summaryData.push([
+                shopIndex + 1,
+                formatDateDisplay(date),
+                shop,
+                '0.0',
+                '0.0',
+                'KSh 0'
+            ]);
+        }
+    }
+
+    // Add grand total row
+    summaryData.push([
+        '',
+        '',
+        'TOTAL',
+        grandTotalBags.toFixed(1),
+        grandTotalSold.toFixed(1),
+        `KSh ${grandTotalSales.toLocaleString()}`
+    ]);
+
+    pdf.autoTable({
+        startY: summaryY,
+        head: [['Index', 'Date', 'Shop', 'Bags', 'Bags Sold', 'Sales Amount']],
+        body: summaryData,
+        theme: 'grid',
+        headStyles: { 
+            fillColor: [46, 125, 50], 
+            textColor: 255, 
+            fontStyle: 'bold',
+            halign: 'center'
+        },
+        styles: { 
+            fontSize: 10,
+            cellPadding: 3
+        },
+        columnStyles: {
+            0: { halign: 'center' },
+            1: { halign: 'center' },
+            2: { halign: 'left' },
+            3: { halign: 'right' },
+            4: { halign: 'right' },
+            5: { halign: 'right' }
+        },
+        didParseCell: function(data) {
+            if (data.row.index === summaryData.length - 1) {
+                data.cell.styles.fontStyle = 'bold';
+                data.cell.styles.fillColor = [245, 245, 245];
+            }
+        }
+    });
+
+    // Save the PDF
+    pdf.save(`YFarmers Stock Report as at ${formatDateDisplay(date)}.pdf`);
+    showToast('PDF exported successfully!', 'success');
+}
+
+// DOC2: Stock Value Book PDF
+async function generateDoc2PDF() {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF();
+
+    showToast('Generating PDF...', 'success');
+
+    // PAGE 1: Total Sales Summary
+    let yPos = 20;
+    pdf.setFontSize(16);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('Total Sales Summary', 105, yPos, { align: 'center' });
+    yPos += 15;
+
+    const salesData = [];
+    let totalBagsRemaining = 0;
+    let totalBagsSold = 0;
+    let totalSalesAmount = 0;
+
+    for (const shop of SHOPS) {
+        const shopDocRef = doc(db, 'shops', shop, 'daily', currentDate);
+        const shopDoc = await getDoc(shopDocRef);
+
+        if (shopDoc.exists()) {
+            const data = shopDoc.data();
+            const closing = calculateClosingStock(data);
+            const bagsRemaining = Object.values(closing).reduce((a, b) => a + b, 0);
+
+            let bagsSold = 0;
+            let salesAmount = 0;
+
+            productsData.forEach(product => {
+                const sold = calculateSold(data, product.id);
+                bagsSold += sold;
+                salesAmount += sold * product.sales;
+            });
+
+            totalBagsRemaining += bagsRemaining;
+            totalBagsSold += bagsSold;
+            totalSalesAmount += salesAmount;
+
+            salesData.push([
+                shop,
+                bagsRemaining.toFixed(1),
+                bagsSold.toFixed(1),
+                `KSh ${salesAmount.toLocaleString()}`
+            ]);
+        } else {
+            salesData.push([
+                shop,
+                '0.0',
+                '0.0',
+                'KSh 0'
+            ]);
+        }
+    }
+
+    salesData.push([
+        'TOTAL',
+        totalBagsRemaining.toFixed(1),
+        totalBagsSold.toFixed(1),
+        `KSh ${totalSalesAmount.toLocaleString()}`
+    ]);
+
+    pdf.autoTable({
+        startY: yPos,
+        head: [['Shop Name', 'Bags Remaining', 'Bags Sold', 'Total Sales Amount']],
+        body: salesData,
+        theme: 'grid',
+        headStyles: { 
+            fillColor: [46, 125, 50], 
+            textColor: 255, 
+            fontStyle: 'bold',
+            halign: 'center'
+        },
+        styles: { fontSize: 10, cellPadding: 3 },
+        columnStyles: {
+            0: { halign: 'left' },
+            1: { halign: 'right' },
+            2: { halign: 'right' },
+            3: { halign: 'right' }
+        },
+        didParseCell: function(data) {
+            if (data.row.index === salesData.length - 1) {
+                data.cell.styles.fontStyle = 'bold';
+                data.cell.styles.fillColor = [245, 245, 245];
+            }
+        }
+    });
+
+    // PAGE 2: Debtors
+    pdf.addPage();
+    yPos = 20;
+
+    pdf.setFontSize(16);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('Debtors', 105, yPos, { align: 'center' });
+    yPos += 15;
+
+    const debtorsData = [];
+    let totalDebtorsAmount = 0;
+
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            const date = docSnapshot.id;
+
+            if (data.creditSales) {
+                Object.values(data.creditSales).forEach(sale => {
+                    const product = productsData.find(p => p.id === sale.feedType);
+                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    totalDebtorsAmount += amount;
+
+                    debtorsData.push([
+                        sale.debtorName,
+                        product ? product.name : sale.feedType,
+                        parseFloat(sale.bags).toFixed(1),
+                        `KSh ${parseFloat(sale.price).toLocaleString()}`,
+                        `KSh ${amount.toLocaleString()}`,
+                        shop,
+                        formatDateDisplay(date)
+                    ]);
+                });
+            }
+        });
+    }
+
+    if (debtorsData.length === 0) {
+        debtorsData.push(['No debtors recorded', '', '', '', '', '', '']);
+    }
+
+    debtorsData.push([
+        '',
+        '',
+        '',
+        'TOTAL',
+        `KSh ${totalDebtorsAmount.toLocaleString()}`,
+        '',
+        ''
+    ]);
+
+    pdf.autoTable({
+        startY: yPos,
+        head: [['Client', 'Feeds', 'Bags', 'Price', 'Amount', 'Shop', 'Date']],
+        body: debtorsData,
+        theme: 'grid',
+        headStyles: { 
+            fillColor: [211, 47, 47], 
+            textColor: 255, 
+            fontStyle: 'bold',
+            halign: 'center'
+        },
+        styles: { fontSize: 9, cellPadding: 2 },
+        columnStyles: {
+            0: { cellWidth: 30 },
+            1: { cellWidth: 28 },
+            2: { halign: 'right', cellWidth: 18 },
+            3: { halign: 'right', cellWidth: 25 },
+            4: { halign: 'right', cellWidth: 25 },
+            5: { cellWidth: 25 },
+            6: { cellWidth: 25 }
+        },
+        didParseCell: function(data) {
+            if (data.row.index === debtorsData.length - 1) {
+                data.cell.styles.fontStyle = 'bold';
+                data.cell.styles.fillColor = [245, 245, 245];
+            }
+        }
+    });
+
+    // PAGE 3: Creditors
+    pdf.addPage();
+    yPos = 20;
+
+    pdf.setFontSize(16);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('Creditors', 105, yPos, { align: 'center' });
+    yPos += 15;
+
+    const creditorsData = [];
+    let totalCreditorsAmount = 0;
+    let creditorIndex = 1;
+
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            const date = docSnapshot.id;
+
+            if (data.prepayments) {
+                Object.values(data.prepayments).forEach(payment => {
+                    const amount = parseFloat(payment.amountPaid);
+                    totalCreditorsAmount += amount;
+
+                    creditorsData.push([
+                        creditorIndex++,
+                        formatDateDisplay(date),
+                        shop,
+                        payment.clientName,
+                        `KSh ${amount.toLocaleString()}`
+                    ]);
+                });
+            }
+        });
+    }
+
+    if (creditorsData.length === 0) {
+        creditorsData.push(['-', 'No creditors recorded', '', '', '']);
+    }
+
+    creditorsData.push([
+        '',
+        '',
+        '',
+        'TOTAL',
+        `KSh ${totalCreditorsAmount.toLocaleString()}`
+    ]);
+
+    pdf.autoTable({
+        startY: yPos,
+        head: [['Index', 'Date', 'Shop', 'Client', 'Amount']],
+        body: creditorsData,
+        theme: 'grid',
+        headStyles: { 
+            fillColor: [245, 124, 0], 
+            textColor: 255, 
+            fontStyle: 'bold',
+            halign: 'center'
+        },
+        styles: { fontSize: 10, cellPadding: 3 },
+        columnStyles: {
+            0: { halign: 'center', cellWidth: 20 },
+            1: { halign: 'center', cellWidth: 35 },
+            2: { cellWidth: 35 },
+            3: { cellWidth: 45 },
+            4: { halign: 'right', cellWidth: 35 }
+        },
+        didParseCell: function(data) {
+            if (data.row.index === creditorsData.length - 1) {
+                data.cell.styles.fontStyle = 'bold';
+                data.cell.styles.fillColor = [245, 245, 245];
+            }
+        }
+    });
+
+    // PAGE 4: Stock Value Summary
+    pdf.addPage();
+    yPos = 20;
+
+    pdf.setFontSize(16);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('Stock Value Summary', 105, yPos, { align: 'center' });
+    yPos += 20;
+
+    // Calculate shops stock value
+    let shopsStockValue = 0;
+
+    for (const shop of SHOPS) {
+        const shopDocRef = doc(db, 'shops', shop, 'daily', currentDate);
+        const shopDoc = await getDoc(shopDocRef);
+
+        if (shopDoc.exists()) {
+            const data = shopDoc.data();
+            const closing = calculateClosingStock(data);
+
+            productsData.forEach(product => {
+                const bags = closing[product.id] || 0;
+                shopsStockValue += bags * product.cost;
+            });
+        }
+    }
+
+    const netValue = shopsStockValue + totalDebtorsAmount - totalCreditorsAmount;
+
+    // Create value breakdown table
+    pdf.setFontSize(12);
+    pdf.setFont(undefined, 'bold');
+    
+    const valueBreakdown = [
+        ['Debtors Value:', `KSh ${totalDebtorsAmount.toLocaleString()}`],
+        ['Shops Stock Value:', `KSh ${shopsStockValue.toLocaleString()}`],
+        ['Creditors Value:', `KSh ${totalCreditorsAmount.toLocaleString()}`]
+    ];
+
+    pdf.autoTable({
+        startY: yPos,
+        body: valueBreakdown,
+        theme: 'plain',
+        styles: { 
+            fontSize: 12,
+            cellPadding: 5,
+            fontStyle: 'bold'
+        },
+        columnStyles: {
+            0: { cellWidth: 80 },
+            1: { cellWidth: 80, halign: 'right' }
+        }
+    });
+
+    const afterTable = pdf.lastAutoTable.finalY + 10;
+
+    // Draw calculation
+    pdf.setFontSize(11);
+    pdf.setFont(undefined, 'normal');
+    pdf.text('Net Stock Value = Stock in Shops + Debtors - Creditors', 105, afterTable, { align: 'center' });
+    
+    pdf.setFontSize(10);
+    pdf.text(
+        `Net Stock Value = ${shopsStockValue.toLocaleString()} + ${totalDebtorsAmount.toLocaleString()} - ${totalCreditorsAmount.toLocaleString()}`,
+        105,
+        afterTable + 7,
+        { align: 'center' }
+    );
+
+    // Draw net value box
+    const boxY = afterTable + 15;
+    pdf.setFillColor(46, 125, 50);
+    pdf.roundedRect(30, boxY, 150, 20, 3, 3, 'F');
+    
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(14);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('NET STOCK VALUE', 40, boxY + 8);
+    pdf.text(`KSh ${netValue.toLocaleString()}`, 170, boxY + 8, { align: 'right' });
+
+    // Reset text color
+    pdf.setTextColor(0, 0, 0);
+
+    // Save the PDF
+    pdf.save('YFarmers Stock Value Book.pdf');
+    showToast('PDF exported successfully!', 'success');
+}
