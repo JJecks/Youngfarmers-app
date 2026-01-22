@@ -80,6 +80,10 @@ function getPreviousDate(dateStr) {
     return formatDate(date);
 }
 
+function formatBags(number) {
+    return number % 1 === 0 ? number.toString() : number.toFixed(1);
+}
+
 function showToast(message, type = 'success') {
     const toast = document.getElementById('toast');
     toast.textContent = message;
@@ -437,7 +441,7 @@ async function loadReadOnlyShopView(shop) {
             const row = tbody.insertRow();
             row.innerHTML = `
                 <td>${product.name}</td>
-                <td style="text-align: right; font-weight: bold;">${(closing[product.id] || 0).toFixed(1)}</td>
+                <td style="text-align: right; font-weight: bold;">${formatBags(closing[product.id] || 0)}</td>
             `;
         });
     } else {
@@ -445,7 +449,7 @@ async function loadReadOnlyShopView(shop) {
             const row = tbody.insertRow();
             row.innerHTML = `
                 <td>${product.name}</td>
-                <td style="text-align: right; font-weight: bold;">0.0</td>
+                <td style="text-align: right; font-weight: bold;">0</td>
             `;
         });
     }
@@ -480,11 +484,11 @@ function renderClosingStockTable(shop, date, openingStock, shopData, saved, edit
                     `<input type="number" step="0.1" min="0" value="${opening}" 
                      class="opening-stock-input" data-product="${product.id}" 
                      style="width: 80px; padding: 5px; border: 1px solid #ddd; border-radius: 3px; text-align: right;">` :
-                    opening.toFixed(1)}
+                    formatBags(opening)}
             </td>
-            <td style="text-align: right;">${restocking.toFixed(1)}</td>
-            <td style="text-align: right; font-weight: bold; color: #2e7d32;">${closing.toFixed(1)}</td>
-            <td style="text-align: right;">${sold.toFixed(1)}</td>
+            <td style="text-align: right;">${formatBags(restocking)}</td>
+            <td style="text-align: right; font-weight: bold; color: #2e7d32;">${formatBags(closing)}</td>
+            <td style="text-align: right;">${formatBags(sold)}</td>
             <td style="text-align: right;">KSh ${product.sales.toLocaleString()}</td>
             ${currentUserData.role !== 'attendant' ? 
                 `<td style="text-align: right; font-weight: bold;">KSh ${salesTotal.toLocaleString()}</td>` : ''}
@@ -494,7 +498,7 @@ function renderClosingStockTable(shop, date, openingStock, shopData, saved, edit
     const footerRow = tfoot.insertRow();
     footerRow.innerHTML = `
         <td colspan="4" style="text-align: left;">TOTAL</td>
-        <td style="text-align: right; font-weight: bold; color: #2e7d32;">${totalClosing.toFixed(1)}</td>
+        <td style="text-align: right; font-weight: bold; color: #2e7d32;">${formatBags(totalClosing)}</td>
         <td colspan="${currentUserData.role !== 'attendant' ? 1 : 2}"></td>
         ${currentUserData.role !== 'attendant' ? 
             `<td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalSales.toLocaleString()}</td>` : ''}
@@ -551,18 +555,18 @@ function setupOpeningStockSave(shop, date, saved, isFirst) {
         const shopDocRef = doc(db, 'shops', shop, 'daily', date);
         const shopDoc = await getDoc(shopDocRef);
         const closing = calculateClosingStock(shopDoc.data());
-        
+    
         let text = `Closing Stock as at ${formatDateDisplay(date)}\n\n`;
         let totalBags = 0;
-        
+    
         productsData.forEach(product => {
             const bags = closing[product.id] || 0;
             totalBags += bags;
-            text += `${product.name} - ${bags.toFixed(1)} bags\n`;
+            text += `${product.name} - ${formatBags(bags)} bags\n`;
         });
-        
-        text += `\nTotal bags - ${totalBags.toFixed(1)} bags`;
-        
+    
+        text += `\nTotal bags - ${formatBags(totalBags)} bags`;
+    
         navigator.clipboard.writeText(text);
         showToast('Copied to clipboard!', 'success');
     };
