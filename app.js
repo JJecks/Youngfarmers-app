@@ -264,6 +264,9 @@ function loadDashboard() {
         ...SHOPS.map(shop => ({ label: shop, action: () => loadShopView(shop), color: '#2e7d32' })),
         ...(isManager ? [
             { label: 'Total Sales', action: () => loadTotalSalesView(), color: '#1976d2' },
+            { label: 'Analytics', action: () => loadAnalyticsView(), color: '#673ab7' },
+            { label: 'Shop Comparison', action: () => loadShopComparisonView(), color: '#00897b' },
+            { label: 'Low Stock Alerts', action: () => loadLowStockAlertsView(), color: '#e64a19' },
             { label: 'Debtors', action: () => loadDebtorsView(), color: '#d32f2f' },
             { label: 'Creditors', action: () => loadCreditorsView(), color: '#f57c00' },
             { label: 'Stock Value', action: () => loadStockValueView(), color: '#7b1fa2' },
@@ -1283,6 +1286,941 @@ async function loadAllClientsView() {
     shopFilter.onchange = loadClients;
     dateFilter.onchange = loadClients;
     await loadClients();
+}
+// Analytics View
+async function loadAnalyticsView() {
+    showView('analytics-view');
+    
+    const rangeSelector = document.getElementById('analytics-range');
+    rangeSelector.onchange = () => loadAnalyticsData(parseInt(rangeSelector.value));
+    
+    await loadAnalyticsData(30); // Default to 30 days
+}
+
+async function loadAnalyticsData(days) {
+    showToast('Loading analytics...', 'success');
+    
+    // Get date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    
+    // Collect all data
+    const salesByDate = {};
+    const salesByShop = {};
+    const salesByProduct = {};
+    const debtorsData = [];
+    let totalRevenue = 0;
+    let totalProfit = 0;
+    let totalDebts = 0;
+    
+    SHOPS.forEach(shop => {
+        salesByShop[shop] = 0;
+    });
+    
+    productsData.forEach(product => {
+        salesByProduct[product.id] = {
+            name: product.name,
+            quantity: 0,
+            revenue: 0,
+            cost: product.cost,
+            sales: product.sales,
+            profit: 0
+        };
+    });
+    
+    // Loop through all shops and dates
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+        
+        snapshot.forEach(docSnapshot => {
+            const dateStr = docSnapshot.id;
+            const [day, month, year] = dateStr.split('-').map(Number);
+            const docDate = new Date(year, month - 1, day);
+            
+            // Only include data within range
+            if (docDate >= startDate && docDate <= endDate) {
+                const data = docSnapshot.data();
+                
+                // Initialize date in salesByDate
+                if (!salesByDate[dateStr]) {
+                    salesByDate[dateStr] = 0;
+                }
+                
+                // Calculate sales
+                productsData.forEach(product => {
+                    const sold = calculateSold(data, product.id);
+                    const revenue = sold * product.sales;
+                    const profit = sold * (product.sales - product.cost);
+                    
+                    salesByDate[dateStr] += revenue;
+                    salesByShop[shop] += revenue;
+                    salesByProduct[product.id].quantity += sold;
+                    salesByProduct[product.id].revenue += revenue;
+                    salesByProduct[product.id].profit += profit;
+                    
+                    totalRevenue += revenue;
+                    totalProfit += profit;
+                });
+                
+                // Collect debtors data
+                if (data.creditSales) {
+                    Object.values(data.creditSales).forEach(sale => {
+                        const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                        const daysOutstanding = Math.floor((new Date() - docDate) / (1000 * 60 * 60 * 24));
+                        
+                        totalDebts += amount;
+                        
+                        debtorsData.push({
+                            client: sale.debtorName,
+                            amount: amount,
+                            days: daysOutstanding,
+                            shop: shop,
+                            date: docDate
+                        });
+                    });
+                }
+            }
+        });
+    }
+    
+    // Render all charts and tables
+    renderSalesTrendChart(salesByDate);
+    renderShopComparisonChart(salesByShop);
+    renderProductPerformanceChart(salesByProduct);
+    renderProfitMarginsTable(salesByProduct);
+    renderFinancialOverview(totalRevenue, totalProfit, totalDebts);
+    renderRevenueTrendChart(salesByDate);
+    renderDebtorsAgingReport(debtorsData);
+    
+    showToast('Analytics loaded successfully!', 'success');
+}
+
+function renderSalesTrendChart(salesByDate) {
+    const ctx = document.getElementById('sales-trend-chart');
+    
+    // Sort dates
+    const sortedDates = Object.keys(salesByDate).sort((a, b) => {
+        const [dayA, monthA, yearA] = a.split('-').map(Number);
+        const [dayB, monthB, yearB] = b.split('-').map(Number);
+        return new Date(yearA, monthA - 1, dayA) - new Date(yearB, monthB - 1, dayB);
+    });
+    
+    const labels = sortedDates.map(date => formatDateDisplay(date));
+    const data = sortedDates.map(date => salesByDate[date]);
+    
+    // Destroy existing chart if it exists
+    if (window.salesTrendChart) {
+        window.salesTrendChart.destroy();
+    }
+    
+    window.salesTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Daily Sales (KSh)',
+                data: data,
+                borderColor: '#2e7d32',
+                backgroundColor: 'rgba(46, 125, 50, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Sales: KSh ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'KSh ' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderShopComparisonChart(salesByShop) {
+    const ctx = document.getElementById('shop-comparison-chart');
+    
+    const labels = Object.keys(salesByShop);
+    const data = Object.values(salesByShop);
+    
+    const colors = [
+        '#2e7d32', '#1976d2', '#d32f2f', '#f57c00', 
+        '#7b1fa2', '#0097a7', '#388e3c'
+    ];
+    
+    if (window.shopComparisonChart) {
+        window.shopComparisonChart.destroy();
+    }
+    
+    window.shopComparisonChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Total Sales (KSh)',
+                data: data,
+                backgroundColor: colors,
+                borderColor: colors.map(c => c),
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Sales: KSh ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'KSh ' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderProductPerformanceChart(salesByProduct) {
+    const ctx = document.getElementById('product-performance-chart');
+    
+    const labels = [];
+    const quantities = [];
+    
+    Object.values(salesByProduct).forEach(product => {
+        if (product.quantity > 0) {
+            labels.push(product.name);
+            quantities.push(product.quantity);
+        }
+    });
+    
+    if (window.productPerformanceChart) {
+        window.productPerformanceChart.destroy();
+    }
+    
+    window.productPerformanceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Total Bags Sold',
+                data: quantities,
+                backgroundColor: '#1976d2',
+                borderColor: '#1565c0',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            indexAxis: 'y',
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Bags Sold: ' + context.parsed.x.toFixed(1);
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+function renderProfitMarginsTable(salesByProduct) {
+    const tbody = document.getElementById('profit-margins-body');
+    const tfoot = document.getElementById('profit-margins-footer');
+    tbody.innerHTML = '';
+    tfoot.innerHTML = '';
+    
+    let grandTotalProfit = 0;
+    let grandTotalBags = 0;
+    
+    Object.values(salesByProduct).forEach(product => {
+        if (product.quantity > 0) {
+            const profitPerBag = product.sales - product.cost;
+            const profitMargin = ((profitPerBag / product.sales) * 100).toFixed(1);
+            
+            grandTotalProfit += product.profit;
+            grandTotalBags += product.quantity;
+            
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td>${product.name}</td>
+                <td style="text-align: right;">KSh ${product.cost.toLocaleString()}</td>
+                <td style="text-align: right;">KSh ${product.sales.toLocaleString()}</td>
+                <td style="text-align: right; color: #2e7d32; font-weight: bold;">KSh ${profitPerBag.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold;">${profitMargin}%</td>
+                <td style="text-align: right;">${product.quantity.toFixed(1)}</td>
+                <td style="text-align: right; color: #2e7d32; font-weight: bold;">KSh ${product.profit.toLocaleString()}</td>
+            `;
+        }
+    });
+    
+    const footerRow = tfoot.insertRow();
+    footerRow.innerHTML = `
+        <td colspan="5" style="text-align: left; font-weight: bold;">TOTAL</td>
+        <td style="text-align: right; font-weight: bold;">${grandTotalBags.toFixed(1)}</td>
+        <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${grandTotalProfit.toLocaleString()}</td>
+    `;
+}
+
+function renderFinancialOverview(revenue, profit, debts) {
+    document.getElementById('total-revenue').textContent = `KSh ${revenue.toLocaleString()}`;
+    document.getElementById('total-profit').textContent = `KSh ${profit.toLocaleString()}`;
+    document.getElementById('outstanding-debts').textContent = `KSh ${debts.toLocaleString()}`;
+}
+
+function renderRevenueTrendChart(salesByDate) {
+    const ctx = document.getElementById('revenue-trend-chart');
+    
+    const sortedDates = Object.keys(salesByDate).sort((a, b) => {
+        const [dayA, monthA, yearA] = a.split('-').map(Number);
+        const [dayB, monthB, yearB] = b.split('-').map(Number);
+        return new Date(yearA, monthA - 1, dayA) - new Date(yearB, monthB - 1, dayB);
+    });
+    
+    const labels = sortedDates.map(date => {
+        const [day, month] = date.split('-');
+        return `${day}/${month}`;
+    });
+    const data = sortedDates.map(date => salesByDate[date]);
+    
+    if (window.revenueTrendChart) {
+        window.revenueTrendChart.destroy();
+    }
+    
+    window.revenueTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Revenue Trend (KSh)',
+                data: data,
+                borderColor: '#7b1fa2',
+                backgroundColor: 'rgba(123, 31, 162, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'KSh ' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderDebtorsAgingReport(debtorsData) {
+    const tbody = document.getElementById('debtors-aging-body');
+    tbody.innerHTML = '';
+    
+    // Sort by days outstanding (oldest first)
+    debtorsData.sort((a, b) => b.days - a.days);
+    
+    // Group by client
+    const clientDebts = {};
+    debtorsData.forEach(debt => {
+        if (!clientDebts[debt.client]) {
+            clientDebts[debt.client] = {
+                amount: 0,
+                oldestDays: 0,
+                shop: debt.shop
+            };
+        }
+        clientDebts[debt.client].amount += debt.amount;
+        if (debt.days > clientDebts[debt.client].oldestDays) {
+            clientDebts[debt.client].oldestDays = debt.days;
+        }
+    });
+    
+    Object.entries(clientDebts).forEach(([client, data]) => {
+        const row = tbody.insertRow();
+        
+        let status = 'current';
+        let statusText = 'Current';
+        let statusClass = 'status-current';
+        
+        if (data.oldestDays > 60) {
+            status = 'overdue';
+            statusText = 'Overdue';
+            statusClass = 'status-overdue';
+        } else if (data.oldestDays > 30) {
+            status = 'warning';
+            statusText = 'Warning';
+            statusClass = 'status-warning';
+        }
+        
+        row.innerHTML = `
+            <td>${client}</td>
+            <td style="text-align: right; font-weight: bold;">KSh ${data.amount.toLocaleString()}</td>
+            <td style="text-align: right;">${data.oldestDays} days</td>
+            <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+            <td>${data.shop}</td>
+        `;
+    });
+    
+    if (Object.keys(clientDebts).length === 0) {
+        const row = tbody.insertRow();
+        row.innerHTML = '<td colspan="5" style="text-align: center; color: #666;">No outstanding debts</td>';
+    }
+}
+// Shop Comparison View
+async function loadShopComparisonView() {
+    showView('shop-comparison-view');
+    
+    const periodSelector = document.getElementById('comparison-period');
+    periodSelector.onchange = () => loadShopComparisonData(parseInt(periodSelector.value));
+    
+    await loadShopComparisonData(30);
+}
+
+async function loadShopComparisonData(days) {
+    showToast('Loading shop comparison...', 'success');
+    
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    
+    const shopPerformance = {};
+    
+    // Initialize shop data
+    SHOPS.forEach(shop => {
+        shopPerformance[shop] = {
+            totalSales: 0,
+            bagsSold: 0,
+            daysWithSales: 0,
+            productSales: {},
+            stockTurnover: 0,
+            openingStock: 0,
+            closingStock: 0
+        };
+        
+        productsData.forEach(product => {
+            shopPerformance[shop].productSales[product.id] = 0;
+        });
+    });
+    
+    // Collect data
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+        
+        let firstDayStock = null;
+        let lastDayStock = null;
+        
+        snapshot.forEach(docSnapshot => {
+            const dateStr = docSnapshot.id;
+            const [day, month, year] = dateStr.split('-').map(Number);
+            const docDate = new Date(year, month - 1, day);
+            
+            if (docDate >= startDate && docDate <= endDate) {
+                const data = docSnapshot.data();
+                
+                if (!firstDayStock && data.openingStock) {
+                    firstDayStock = Object.values(data.openingStock).reduce((a, b) => a + b, 0);
+                }
+                
+                if (data.openingStock) {
+                    const closing = calculateClosingStock(data);
+                    lastDayStock = Object.values(closing).reduce((a, b) => a + b, 0);
+                }
+                
+                let hasSales = false;
+                productsData.forEach(product => {
+                    const sold = calculateSold(data, product.id);
+                    if (sold > 0) {
+                        hasSales = true;
+                        shopPerformance[shop].bagsSold += sold;
+                        shopPerformance[shop].totalSales += sold * product.sales;
+                        shopPerformance[shop].productSales[product.id] += sold;
+                    }
+                });
+                
+                if (hasSales) {
+                    shopPerformance[shop].daysWithSales++;
+                }
+            }
+        });
+        
+        shopPerformance[shop].openingStock = firstDayStock || 0;
+        shopPerformance[shop].closingStock = lastDayStock || 0;
+        
+        // Calculate stock turnover (bags sold / average stock)
+        const avgStock = (shopPerformance[shop].openingStock + shopPerformance[shop].closingStock) / 2;
+        if (avgStock > 0) {
+            shopPerformance[shop].stockTurnover = (shopPerformance[shop].bagsSold / avgStock).toFixed(2);
+        }
+    }
+    
+    // Find best performing shop
+    let bestShop = null;
+    let bestSales = 0;
+    Object.entries(shopPerformance).forEach(([shop, data]) => {
+        if (data.totalSales > bestSales) {
+            bestSales = data.totalSales;
+            bestShop = shop;
+        }
+    });
+    
+    document.getElementById('best-shop-name').textContent = bestShop || '-';
+    document.getElementById('best-shop-sales').textContent = `KSh ${bestSales.toLocaleString()}`;
+    
+    // Render performance metrics
+    renderShopMetricsTable(shopPerformance, days);
+    renderShopSalesComparisonChart(shopPerformance);
+    renderProductMixTable(shopPerformance);
+    
+    showToast('Shop comparison loaded!', 'success');
+}
+
+function renderShopMetricsTable(shopPerformance, days) {
+    const tbody = document.getElementById('shop-metrics-body');
+    tbody.innerHTML = '';
+    
+    // Sort shops by total sales
+    const sortedShops = Object.entries(shopPerformance).sort((a, b) => b[1].totalSales - a[1].totalSales);
+    
+    sortedShops.forEach(([shop, data], index) => {
+        const avgSalePerDay = data.daysWithSales > 0 ? (data.totalSales / days).toFixed(0) : 0;
+        
+        // Calculate efficiency rating based on stock turnover and sales
+        let efficiency = 0;
+        let efficiencyClass = 'efficiency-poor';
+        let efficiencyText = 'Poor';
+        
+        if (data.stockTurnover > 2) {
+            efficiency = 95;
+            efficiencyClass = 'efficiency-excellent';
+            efficiencyText = 'Excellent';
+        } else if (data.stockTurnover > 1) {
+            efficiency = 75;
+            efficiencyClass = 'efficiency-good';
+            efficiencyText = 'Good';
+        } else if (data.stockTurnover > 0.5) {
+            efficiency = 50;
+            efficiencyClass = 'efficiency-average';
+            efficiencyText = 'Average';
+        } else if (data.stockTurnover > 0) {
+            efficiency = 25;
+            efficiencyClass = 'efficiency-poor';
+            efficiencyText = 'Poor';
+        }
+        
+        const row = tbody.insertRow();
+        row.innerHTML = `
+            <td style="text-align: center; font-weight: bold; font-size: 1.2em;">${index + 1}</td>
+            <td style="font-weight: bold;">${shop}</td>
+            <td style="text-align: right; font-weight: bold;">KSh ${data.totalSales.toLocaleString()}</td>
+            <td style="text-align: right;">${data.bagsSold.toFixed(1)}</td>
+            <td style="text-align: right;">KSh ${Number(avgSalePerDay).toLocaleString()}</td>
+            <td style="text-align: right;">${data.stockTurnover}x</td>
+            <td style="text-align: center;"><span class="efficiency-rating ${efficiencyClass}">${efficiencyText} (${efficiency}%)</span></td>
+        `;
+    });
+}
+
+function renderShopSalesComparisonChart(shopPerformance) {
+    const ctx = document.getElementById('shop-sales-comparison-chart');
+    
+    const labels = Object.keys(shopPerformance);
+    const salesData = labels.map(shop => shopPerformance[shop].totalSales);
+    const bagsData = labels.map(shop => shopPerformance[shop].bagsSold);
+    
+    if (window.shopSalesComparisonChart) {
+        window.shopSalesComparisonChart.destroy();
+    }
+    
+    window.shopSalesComparisonChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Total Sales (KSh)',
+                data: salesData,
+                backgroundColor: '#2e7d32',
+                borderColor: '#1b5e20',
+                borderWidth: 2,
+                yAxisID: 'y'
+            }, {
+                label: 'Bags Sold',
+                data: bagsData,
+                backgroundColor: '#1976d2',
+                borderColor: '#1565c0',
+                borderWidth: 2,
+                yAxisID: 'y1'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                }
+            },
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Sales (KSh)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return 'KSh ' + value.toLocaleString();
+                        }
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Bags Sold'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderProductMixTable(shopPerformance) {
+    const tbody = document.getElementById('product-mix-body');
+    tbody.innerHTML = '';
+    
+    Object.entries(shopPerformance).forEach(([shop, data]) => {
+        let topProduct = null;
+        let topProductSales = 0;
+        let totalShopBags = data.bagsSold;
+        
+        Object.entries(data.productSales).forEach(([productId, quantity]) => {
+            if (quantity > topProductSales) {
+                topProductSales = quantity;
+                topProduct = productsData.find(p => p.id === productId);
+            }
+        });
+        
+        const percentage = totalShopBags > 0 ? ((topProductSales / totalShopBags) * 100).toFixed(1) : 0;
+        
+        const row = tbody.insertRow();
+        row.innerHTML = `
+            <td>${shop}</td>
+            <td style="font-weight: bold;">${topProduct ? topProduct.name : '-'}</td>
+            <td style="text-align: right;">${topProductSales.toFixed(1)} bags</td>
+            <td style="text-align: right; font-weight: bold; color: #2e7d32;">${percentage}%</td>
+        `;
+    });
+}
+
+// Low Stock Alerts View
+async function loadLowStockAlertsView() {
+    showView('low-stock-alerts-view');
+    await loadLowStockData();
+}
+
+async function loadLowStockData() {
+    showToast('Loading stock alerts...', 'success');
+    
+    // Define thresholds
+    const thresholds = {
+        'BROODSTOCK': 2,
+        'STARTER_MASH': 2,
+        'SAMAKGRO_1MM': 5,
+        'SAMAKGRO_2MM': 10,
+        'SAMAKGRO_3MM': 10,
+        'SAMAKGRO_4MMHP': 10,
+        'SAMAKGRO_4.5MM': 10
+    };
+    
+    const lowStockItems = [];
+    const shopStockStatus = {};
+    let criticalCount = 0;
+    let warningCount = 0;
+    let goodCount = 0;
+    
+    // Collect current stock data
+    for (const shop of SHOPS) {
+        const shopDocRef = doc(db, 'shops', shop, 'daily', currentDate);
+        const shopDoc = await getDoc(shopDocRef);
+        
+        shopStockStatus[shop] = {
+            alerts: [],
+            totalItems: productsData.length
+        };
+        
+        if (shopDoc.exists()) {
+            const data = shopDoc.data();
+            const closing = calculateClosingStock(data);
+            
+            productsData.forEach(product => {
+                const currentStock = closing[product.id] || 0;
+                const threshold = thresholds[product.id] || 10;
+                const shortage = Math.max(0, threshold - currentStock);
+                
+                let status = 'good';
+                if (currentStock === 0) {
+                    status = 'critical';
+                    criticalCount++;
+                } else if (currentStock < threshold) {
+                    status = 'warning';
+                    warningCount++;
+                } else {
+                    goodCount++;
+                }
+                
+                if (status !== 'good') {
+                    lowStockItems.push({
+                        shop: shop,
+                        product: product,
+                        currentStock: currentStock,
+                        threshold: threshold,
+                        shortage: shortage,
+                        status: status
+                    });
+                    
+                    shopStockStatus[shop].alerts.push({
+                        product: product.name,
+                        stock: currentStock,
+                        status: status
+                    });
+                }
+            });
+        } else {
+            // No data - all items critical
+            productsData.forEach(product => {
+                const threshold = thresholds[product.id] || 10;
+                criticalCount++;
+                
+                lowStockItems.push({
+                    shop: shop,
+                    product: product,
+                    currentStock: 0,
+                    threshold: threshold,
+                    shortage: threshold,
+                    status: 'critical'
+                });
+                
+                shopStockStatus[shop].alerts.push({
+                    product: product.name,
+                    stock: 0,
+                    status: 'critical'
+                });
+            });
+        }
+    }
+    
+    // Update alert summary
+    document.getElementById('critical-alerts').textContent = criticalCount;
+    document.getElementById('warning-alerts').textContent = warningCount;
+    document.getElementById('good-stock').textContent = goodCount;
+    
+    // Render tables
+    renderLowStockTable(lowStockItems);
+    renderShopStockStatus(shopStockStatus);
+    renderReorderRecommendations(lowStockItems);
+    
+    showToast('Stock alerts loaded!', 'success');
+}
+
+function renderLowStockTable(lowStockItems) {
+    const tbody = document.getElementById('low-stock-body');
+    tbody.innerHTML = '';
+    
+    // Sort by status (critical first) then by shortage
+    lowStockItems.sort((a, b) => {
+        if (a.status === 'critical' && b.status !== 'critical') return -1;
+        if (a.status !== 'critical' && b.status === 'critical') return 1;
+        return b.shortage - a.shortage;
+    });
+    
+    lowStockItems.forEach(item => {
+        const statusBadge = item.status === 'critical' 
+            ? '<span class="stock-status stock-critical">🚨 CRITICAL</span>'
+            : '<span class="stock-status stock-warning">⚠️ LOW</span>';
+        
+        const recommendedReorder = Math.ceil(item.shortage * 1.5); // 50% buffer
+        
+        const row = tbody.insertRow();
+        row.innerHTML = `
+            <td>${statusBadge}</td>
+            <td style="font-weight: bold;">${item.shop}</td>
+            <td>${item.product.name}</td>
+            <td style="text-align: right; ${item.currentStock === 0 ? 'color: #d32f2f; font-weight: bold;' : ''}">${item.currentStock.toFixed(1)} bags</td>
+            <td style="text-align: right;">${item.threshold} bags</td>
+            <td style="text-align: right; color: #d32f2f; font-weight: bold;">${item.shortage.toFixed(1)} bags</td>
+            <td style="text-align: right; color: #2e7d32; font-weight: bold;">${recommendedReorder} bags</td>
+        `;
+    });
+    
+    if (lowStockItems.length === 0) {
+        const row = tbody.insertRow();
+        row.innerHTML = '<td colspan="7" style="text-align: center; color: #2e7d32; padding: 30px;"><span style="font-size: 2em;">✅</span><br><br><strong>All stock levels are good!</strong></td>';
+    }
+}
+
+function renderShopStockStatus(shopStockStatus) {
+    const container = document.getElementById('shop-stock-status');
+    container.innerHTML = '<div class="shop-stock-grid"></div>';
+    const grid = container.querySelector('.shop-stock-grid');
+    
+    Object.entries(shopStockStatus).forEach(([shop, status]) => {
+        const hasAlerts = status.alerts.length > 0;
+        const cardClass = hasAlerts ? 'shop-stock-card has-alerts' : 'shop-stock-card';
+        
+        const card = document.createElement('div');
+        card.className = cardClass;
+        
+        let alertsHTML = '';
+        if (hasAlerts) {
+            alertsHTML = status.alerts.map(alert => {
+                const icon = alert.status === 'critical' ? '🚨' : '⚠️';
+                return `<div class="shop-stock-item">${icon} ${alert.product}: ${alert.stock.toFixed(1)} bags</div>`;
+            }).join('');
+        } else {
+            alertsHTML = '<div class="shop-stock-item" style="color: #2e7d32;">✅ All products well stocked</div>';
+        }
+        
+        card.innerHTML = `
+            <h4>${shop}</h4>
+            ${alertsHTML}
+        `;
+        
+        grid.appendChild(card);
+    });
+}
+
+function renderReorderRecommendations(lowStockItems) {
+    const tbody = document.getElementById('reorder-recommendations-body');
+    const tfoot = document.getElementById('reorder-recommendations-footer');
+    tbody.innerHTML = '';
+    tfoot.innerHTML = '';
+    
+    // Group by product
+    const productShortages = {};
+    
+    lowStockItems.forEach(item => {
+        if (!productShortages[item.product.id]) {
+            productShortages[item.product.id] = {
+                product: item.product,
+                totalShortage: 0,
+                shopsAffected: [],
+                priority: 0
+            };
+        }
+        
+        productShortages[item.product.id].totalShortage += item.shortage;
+        productShortages[item.product.id].shopsAffected.push(item.shop);
+        
+        if (item.status === 'critical') {
+            productShortages[item.product.id].priority += 10;
+        } else {
+            productShortages[item.product.id].priority += 1;
+        }
+    });
+    
+    // Sort by priority
+    const sortedProducts = Object.values(productShortages).sort((a, b) => b.priority - a.priority);
+    
+    let totalReorderCost = 0;
+    
+    sortedProducts.forEach(item => {
+        const recommendedOrder = Math.ceil(item.totalShortage * 1.5); // 50% buffer
+        const estimatedCost = recommendedOrder * item.product.cost;
+        totalReorderCost += estimatedCost;
+        
+        let priorityBadge = '';
+        if (item.priority >= 10) {
+            priorityBadge = '<span class="priority-badge priority-high">HIGH</span>';
+        } else if (item.priority >= 5) {
+            priorityBadge = '<span class="priority-badge priority-medium">MEDIUM</span>';
+        } else {
+            priorityBadge = '<span class="priority-badge priority-low">LOW</span>';
+        }
+        
+        const row = tbody.insertRow();
+        row.innerHTML = `
+            <td>${priorityBadge}</td>
+            <td style="font-weight: bold;">${item.product.name}</td>
+            <td style="text-align: right; color: #d32f2f;">${item.totalShortage.toFixed(1)} bags</td>
+            <td style="text-align: center;">${item.shopsAffected.length} shops</td>
+            <td style="text-align: right; font-weight: bold; color: #2e7d32;">${recommendedOrder} bags</td>
+            <td style="text-align: right; font-weight: bold;">KSh ${estimatedCost.toLocaleString()}</td>
+        `;
+    });
+    
+    if (sortedProducts.length > 0) {
+        const footerRow = tfoot.insertRow();
+        footerRow.innerHTML = `
+            <td colspan="5" style="text-align: right; font-weight: bold;">TOTAL REORDER COST:</td>
+            <td style="text-align: right; font-weight: bold; color: #2e7d32; font-size: 1.1em;">KSh ${totalReorderCost.toLocaleString()}</td>
+        `;
+    } else {
+        const row = tbody.insertRow();
+        row.innerHTML = '<td colspan="6" style="text-align: center; color: #2e7d32; padding: 30px;">No reorder recommendations at this time</td>';
+    }
 }
 async function loadAdminPanel() {
     showView('admin-view');
