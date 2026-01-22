@@ -149,7 +149,11 @@ function setupAppListeners() {
     document.getElementById('signout-btn').addEventListener('click', async () => {
         await signOut(auth);
         showToast('Signed out successfully!', 'success');
+        setTimeout(() => {
+            window.location.reload();
+        }, 500);
     });
+
     document.getElementById('header-home').addEventListener('click', () => {
         loadDashboard();
     });
@@ -252,6 +256,9 @@ function setupAuthListeners() {
     });
         document.getElementById('pending-signout').addEventListener('click', async () => {
             await signOut(auth);
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
     });
 }
 function loadDashboard() {
