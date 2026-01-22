@@ -149,7 +149,12 @@ function setupAppListeners() {
     document.getElementById('signout-btn').addEventListener('click', async () => {
         await signOut(auth);
         showToast('Signed out successfully!', 'success');
+        // Force reload to clear state
+        setTimeout(() => {
+            window.location.reload();
+        }, 500);
     });
+
     document.getElementById('header-home').addEventListener('click', () => {
         loadDashboard();
     });
@@ -418,8 +423,9 @@ async function loadReadOnlyShopView(shop) {
     showView('readonly-shop-view');
     document.getElementById('readonly-shop-title').textContent = `${shop} - Stock Available (View Only)`;
     
-    const shopDocRef = doc(db, 'shops', shop, 'daily', currentDate);
-    const shopDoc = await getDoc(shopDocRef);
+    try {
+        const shopDocRef = doc(db, 'shops', shop, 'daily', currentDate);
+        const shopDoc = await getDoc(shopDocRef);
     
     const tbody = document.getElementById('readonly-stock-body');
     tbody.innerHTML = '';
@@ -442,6 +448,22 @@ async function loadReadOnlyShopView(shop) {
             `;
         });
     }
+    } catch (error) {
+        console.error('Error loading shop data:', error);
+        showToast('Error loading shop data. Please check permissions.', 'error');
+        
+        // Show empty table
+        const tbody = document.getElementById('readonly-stock-body');
+        tbody.innerHTML = '';
+        productsData.forEach(product => {
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td>${product.name}</td>
+                <td style="text-align: right; font-weight: bold;">-</td>
+            `;
+        });
+    }
+}
 }
 function renderClosingStockTable(shop, date, openingStock, shopData, saved, editable) {
     const tbody = document.getElementById('closing-stock-body');
