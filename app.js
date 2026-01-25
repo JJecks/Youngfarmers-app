@@ -998,6 +998,8 @@ function showTransactionForm(formId, shop) {
                         ${productsData.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
                     </select>
                     <input type="number" step="0.1" min="0.1" class="form-input" id="form-bags" placeholder="Number of Bags" required>
+                    <input type="number" class="form-input" id="form-price" placeholder="Price" readonly style="background: #f5f5f5;">
+                    <input type="number" min="0" class="form-input" id="form-discount" placeholder="Discount (KSh)" value="0" required>
                     <div class="form-buttons">
                         <button type="submit" class="btn-save" style="background: #f57c00;">Save</button>
                         <button type="button" class="btn-cancel">Cancel</button>
@@ -1071,12 +1073,20 @@ async function loadCreditorsForRelease(shop) {
         loading.style.display = 'none';
         form.style.display = 'grid';
         
+        // Auto-fill price when feed type is selected
+        document.getElementById('form-feed').onchange = (e) => {
+            const product = productsData.find(p => p.id === e.target.value);
+            document.getElementById('form-price').value = product ? product.sales : '';
+        };
+        
         form.onsubmit = async (e) => {
             e.preventDefault();
             await saveTransaction(shop, currentDate, 'creditorReleases', {
                 creditorName: document.getElementById('form-creditor').value,
                 feedType: document.getElementById('form-feed').value,
-                bags: document.getElementById('form-bags').value
+                bags: document.getElementById('form-bags').value,
+                price: document.getElementById('form-price').value,
+                discount: document.getElementById('form-discount').value
             });
         };
     }
@@ -1323,25 +1333,49 @@ async function loadDebtorsView() {
 
 async function loadCreditorsView() {
     showView('creditors-view');
+    
+    // Wait for DOM to update
+    await new Promise(resolve => setTimeout(resolve, 0));
+    
     const tbody = document.getElementById('creditors-body');
     const tfoot = document.getElementById('creditors-footer');
+    const summaryTbody = document.getElementById('creditors-summary-body');
+    const summaryTfoot = document.getElementById('creditors-summary-footer');
+    
+    // Add safety checks
+    if (!tbody || !tfoot || !summaryTbody || !summaryTfoot) {
+        console.error('Creditors view elements not found');
+        showToast('Error loading creditors view', 'error');
+        return;
+    }
+    
     tbody.innerHTML = '';
     tfoot.innerHTML = '';
+    summaryTbody.innerHTML = '';
+    summaryTfoot.innerHTML = '';
 
     let totalAmount = 0;
+    const creditorBalances = {}; // Track: { name: { prepaid, feedsTaken, balance } }
 
+    // Collect all prepayments
     for (const shop of SHOPS) {
         const shopQuery = query(collection(db, 'shops', shop, 'daily'));
         const snapshot = await getDocs(shopQuery);
 
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const date = doc.id;
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            const date = docSnapshot.id;
             
             if (data.prepayments) {
                 Object.values(data.prepayments).forEach(payment => {
                     const amount = parseFloat(payment.amountPaid);
                     totalAmount += amount;
+
+                    // Track creditor balance
+                    if (!creditorBalances[payment.clientName]) {
+                        creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0, feedsAmount: 0 };
+                    }
+                    creditorBalances[payment.clientName].prepaid += amount;
 
                     const row = tbody.insertRow();
                     row.innerHTML = `
@@ -1355,12 +1389,73 @@ async function loadCreditorsView() {
         });
     }
 
+    // Collect all creditor releases (feeds taken)
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.creditorReleases) {
+                Object.values(data.creditorReleases).forEach(release => {
+                    const creditorName = release.creditorName;
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
+                    const amount = product ? bags * product.sales : 0;
+                    
+                    if (creditorBalances[creditorName]) {
+                        creditorBalances[creditorName].feedsTaken += bags;
+                        creditorBalances[creditorName].feedsAmount += amount;
+                    }
+                });
+            }
+        });
+    }
+
+    // Render prepayments footer
     const footerRow = tfoot.insertRow();
     footerRow.innerHTML = `
         <td style="font-weight: bold;">TOTAL</td>
         <td style="text-align: right; font-weight: bold; color: #f57c00;">KSh ${totalAmount.toLocaleString()}</td>
         <td colspan="2"></td>
     `;
+
+    // Render summary table
+    let totalFeedsTaken = 0;
+    let totalFeedsAmount = 0;
+    let totalBalance = 0;
+
+    Object.entries(creditorBalances).forEach(([name, data]) => {
+        const balance = data.prepaid - data.feedsAmount;
+        
+        // Only show if there's a balance (positive or negative)
+        if (balance !== 0) {
+            totalFeedsTaken += data.feedsTaken;
+            totalFeedsAmount += data.feedsAmount;
+            totalBalance += balance;
+
+            const row = summaryTbody.insertRow();
+            row.innerHTML = `
+                <td style="font-weight: bold;">${name}</td>
+                <td style="text-align: right;">${data.feedsTaken.toFixed(1)} bags</td>
+                <td style="text-align: right;">KSh ${data.feedsAmount.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold; color: ${balance > 0 ? '#2e7d32' : '#d32f2f'};">KSh ${balance.toLocaleString()}</td>
+            `;
+        }
+    });
+
+    // Summary footer
+    const summaryFooterRow = summaryTfoot.insertRow();
+    summaryFooterRow.innerHTML = `
+        <td style="font-weight: bold;">TOTAL</td>
+        <td style="text-align: right; font-weight: bold;">${totalFeedsTaken.toFixed(1)} bags</td>
+        <td style="text-align: right; font-weight: bold;">KSh ${totalFeedsAmount.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #f57c00; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
+    `;
+
+    // Store total creditor balance globally for Stock Value calculation
+    window.totalCreditorsBalance = totalBalance;
 }
 async function loadStockValueView() {
     showView('stock-value-view');
@@ -3114,6 +3209,60 @@ async function generateDoc2PDF() {
         }
     }
 
+    // Calculate debtors balance (outstanding amount after payments)
+    const debtorBalances = {};
+
+    // Collect all credit sales
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.creditSales) {
+                Object.values(data.creditSales).forEach(sale => {
+                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                    
+                    if (!debtorBalances[sale.debtorName]) {
+                        debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
+                    }
+                    debtorBalances[sale.debtorName].owed += amount;
+                });
+            }
+        });
+    }
+
+    // Collect all debt payments
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.debtPayments) {
+                Object.values(data.debtPayments).forEach(payment => {
+                    const debtorName = payment.debtorName;
+                    const amountPaid = parseFloat(payment.amountPaid);
+                    
+                    if (debtorBalances[debtorName]) {
+                        debtorBalances[debtorName].paid += amountPaid;
+                    }
+                });
+            }
+        });
+    }
+
+    // Calculate total outstanding debtors balance
+    let debtorsValue = 0;
+    Object.values(debtorBalances).forEach(data => {
+        const balance = data.owed - data.paid;
+        if (balance > 0) {
+            debtorsValue += balance;
+        }
+    });
+
     const netValue = shopsStockValue + debtorsValue - totalCreditorsAmount;
 
     // Create value breakdown table
@@ -3121,7 +3270,7 @@ async function generateDoc2PDF() {
     pdf.setFont(undefined, 'bold');
     
     const valueBreakdown = [
-        ['Debtors Value:', `KSh ${totalDebtorsAmount.toLocaleString()}`],
+        ['Debtors Value:', `KSh ${debtorsValue.toLocaleString()}`],
         ['Shops Stock Value:', `KSh ${shopsStockValue.toLocaleString()}`],
         ['Creditors Value:', `KSh ${totalCreditorsAmount.toLocaleString()}`]
     ];
