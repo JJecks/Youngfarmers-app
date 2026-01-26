@@ -815,6 +815,7 @@ function showTransactionForm(formId, shop) {
                 <h4 style="color: #2e7d32;">Record a Sale</h4>
                 <form id="transaction-form" class="form-grid">
                     <input type="text" class="form-input" id="form-client" placeholder="Client Name" required>
+                    <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'">
                     <select class="form-input" id="form-feed" required>
                         <option value="">Select Feed Type</option>
                         ${productsData.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
@@ -837,6 +838,7 @@ function showTransactionForm(formId, shop) {
             e.preventDefault();
             await saveTransaction(shop, currentDate, 'regularSales', {
                 clientName: document.getElementById('form-client').value,
+                phoneNumber: document.getElementById('form-phone').value || 'Not Provided',
                 feedType: document.getElementById('form-feed').value,
                 bags: document.getElementById('form-bags').value,
                 price: document.getElementById('form-price').value,
@@ -935,6 +937,7 @@ function showTransactionForm(formId, shop) {
                 <h4 style="color: #c62828;">Sales Made on Credit</h4>
                 <form id="transaction-form" class="form-grid">
                     <input type="text" class="form-input" id="form-debtor" placeholder="Debtor Name" required>
+                    <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'">
                     <select class="form-input" id="form-feed" required>
                         <option value="">Select Feed Type</option>
                         ${productsData.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
@@ -957,6 +960,7 @@ function showTransactionForm(formId, shop) {
             e.preventDefault();
             await saveTransaction(shop, currentDate, 'creditSales', {
                 debtorName: document.getElementById('form-debtor').value,
+                phoneNumber: document.getElementById('form-phone').value || 'Not Provided',
                 feedType: document.getElementById('form-feed').value,
                 bags: document.getElementById('form-bags').value,
                 price: document.getElementById('form-price').value,
@@ -969,6 +973,7 @@ function showTransactionForm(formId, shop) {
                 <h4 style="color: #388e3c;">Prepayments Made</h4>
                 <form id="transaction-form" class="form-grid">
                     <input type="text" class="form-input" id="form-client" placeholder="Client Name" required>
+                    <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'">
                     <input type="number" min="0" class="form-input" id="form-amount" placeholder="Amount Paid (KSh)" required>
                     <div class="form-buttons">
                         <button type="submit" class="btn-save" style="background: #388e3c;">Save</button>
@@ -981,6 +986,7 @@ function showTransactionForm(formId, shop) {
             e.preventDefault();
             await saveTransaction(shop, currentDate, 'prepayments', {
                 clientName: document.getElementById('form-client').value,
+                phoneNumber: document.getElementById('form-phone').value || 'Not Provided',
                 amountPaid: document.getElementById('form-amount').value
             });
         };
@@ -1236,7 +1242,6 @@ async function loadDebtorsView() {
 
         snapshot.forEach(docSnapshot => {
             const data = docSnapshot.data();
-            const date = docSnapshot.id;
             
             if (data.creditSales) {
                 Object.values(data.creditSales).forEach(sale => {
@@ -1246,7 +1251,7 @@ async function loadDebtorsView() {
 
                     // Track debtor balance
                     if (!debtorBalances[sale.debtorName]) {
-                        debtorBalances[sale.debtorName] = { owed: 0, paid: 0 };
+                        debtorBalances[sale.debtorName] = { owed: 0, paid: 0, phoneNumber: sale.phoneNumber || 'Not Provided' };
                     }
                     debtorBalances[sale.debtorName].owed += amount;
 
@@ -1258,7 +1263,7 @@ async function loadDebtorsView() {
                         <td style="text-align: right;">KSh ${parseFloat(sale.price).toLocaleString()}</td>
                         <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
                         <td>${shop}</td>
-                        <td>${formatDateDisplay(date)}</td>
+                        <td>${formatDateDisplay(docSnapshot.id)}</td>
                     `;
                 });
             }
@@ -1311,6 +1316,7 @@ async function loadDebtorsView() {
             const row = summaryTbody.insertRow();
             row.innerHTML = `
                 <td style="font-weight: bold;">${name}</td>
+                <td>${data.phoneNumber || 'Not Provided'}</td>
                 <td style="text-align: right;">KSh ${data.owed.toLocaleString()}</td>
                 <td style="text-align: right; color: #2e7d32;">KSh ${data.paid.toLocaleString()}</td>
                 <td style="text-align: right; font-weight: bold; color: #d32f2f;">KSh ${balance.toLocaleString()}</td>
@@ -1321,7 +1327,7 @@ async function loadDebtorsView() {
     // Summary footer
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
-        <td style="font-weight: bold;">TOTAL</td>
+        <td colspan="2" style="font-weight: bold;">TOTAL</td>
         <td style="text-align: right; font-weight: bold;">KSh ${totalOwed.toLocaleString()}</td>
         <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPaid.toLocaleString()}</td>
         <td style="text-align: right; font-weight: bold; color: #d32f2f; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
@@ -1373,7 +1379,7 @@ async function loadCreditorsView() {
 
                     // Track creditor balance
                     if (!creditorBalances[payment.clientName]) {
-                        creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0, feedsAmount: 0 };
+                        creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0, feedsAmount: 0, phoneNumber: payment.phoneNumber || 'Not Provided' };
                     }
                     creditorBalances[payment.clientName].prepaid += amount;
 
@@ -1438,6 +1444,7 @@ async function loadCreditorsView() {
             const row = summaryTbody.insertRow();
             row.innerHTML = `
                 <td style="font-weight: bold;">${name}</td>
+                <td>${data.phoneNumber || 'Not Provided'}</td>
                 <td style="text-align: right;">${data.feedsTaken.toFixed(1)} bags</td>
                 <td style="text-align: right;">KSh ${data.feedsAmount.toLocaleString()}</td>
                 <td style="text-align: right; font-weight: bold; color: ${balance > 0 ? '#2e7d32' : '#d32f2f'};">KSh ${balance.toLocaleString()}</td>
@@ -1448,7 +1455,7 @@ async function loadCreditorsView() {
     // Summary footer
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
-        <td style="font-weight: bold;">TOTAL</td>
+        <td colspan="2" style="font-weight: bold;">TOTAL</td>
         <td style="text-align: right; font-weight: bold;">${totalFeedsTaken.toFixed(1)} bags</td>
         <td style="text-align: right; font-weight: bold;">KSh ${totalFeedsAmount.toLocaleString()}</td>
         <td style="text-align: right; font-weight: bold; color: #f57c00; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
@@ -1473,6 +1480,7 @@ async function loadStockValueData(date) {
     let shopsValue = 0;
     let creditorsValue = 0;
 
+    // Calculate shops stock value at SELLING PRICE
     for (const shop of SHOPS) {
         const shopDocRef = doc(db, 'shops', shop, 'daily', date);
         const shopDoc = await getDoc(shopDocRef);
@@ -1483,39 +1491,12 @@ async function loadStockValueData(date) {
             
             productsData.forEach(product => {
                 const bags = closing[product.id] || 0;
-                shopsValue += bags * product.cost;
+                shopsValue += bags * product.sales; // CHANGED: Using SELLING PRICE
             });
-
-            if (data.creditSales) {
-                Object.values(data.creditSales).forEach(sale => {
-                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
-                    debtorsValue += amount;
-                });
-            }
-
-            if (data.creditorReleases) {
-                Object.values(data.creditorReleases).forEach(release => {
-                    const product = productsData.find(p => p.id === release.feedType);
-                    if (product) {
-                        creditorsValue += parseFloat(release.bags) * product.cost;
-                    }
-                });
-            }
         }
-
-        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
-        const snapshot = await getDocs(shopQuery);
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            if (data.prepayments) {
-                Object.values(data.prepayments).forEach(payment => {
-                    creditorsValue += parseFloat(payment.amountPaid);
-                });
-            }
-        });
     }
-    // Recalculate debtors balance (actual outstanding, not total owed)
-    debtorsValue = 0;
+
+    // Calculate debtors balance (actual outstanding, not total owed)
     const debtorBalances = {};
 
     // Collect all credit sales
@@ -1560,11 +1541,68 @@ async function loadStockValueData(date) {
         });
     }
 
-    // Calculate total outstanding balance
+    // Calculate total outstanding debtors balance
     Object.values(debtorBalances).forEach(data => {
         const balance = data.owed - data.paid;
         if (balance > 0) {
             debtorsValue += balance;
+        }
+    });
+
+    // Calculate creditors balance (prepayments minus feeds taken at SELLING PRICE)
+    const creditorBalances = {};
+
+    // Collect all prepayments
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.prepayments) {
+                Object.values(data.prepayments).forEach(payment => {
+                    if (!creditorBalances[payment.clientName]) {
+                        creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0 };
+                    }
+                    creditorBalances[payment.clientName].prepaid += parseFloat(payment.amountPaid);
+                });
+            }
+        });
+    }
+
+    // Collect all creditor releases (feeds taken at SELLING PRICE)
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.creditorReleases) {
+                Object.values(data.creditorReleases).forEach(release => {
+                    const creditorName = release.creditorName;
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
+                    
+                    // Use price from transaction if available, otherwise use product selling price
+                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                    const discount = parseFloat(release.discount || 0);
+                    const amount = (bags * price) - discount; // SELLING PRICE with discount
+                    
+                    if (creditorBalances[creditorName]) {
+                        creditorBalances[creditorName].feedsTaken += amount;
+                    }
+                });
+            }
+        });
+    }
+
+    // Calculate total creditors balance
+    Object.values(creditorBalances).forEach(data => {
+        const balance = data.prepaid - data.feedsTaken;
+        if (balance !== 0) {
+            creditorsValue += balance;
         }
     });
 
@@ -1575,7 +1613,7 @@ async function loadStockValueData(date) {
     document.getElementById('creditors-value').textContent = `KSh ${creditorsValue.toLocaleString()}`;
     document.getElementById('net-value').textContent = `KSh ${netValue.toLocaleString()}`;
     document.getElementById('formula-text').innerHTML = `
-        Net Stock Value = Stock in Shops + Debtors - Creditors<br>
+        Net Stock Value = Stock in Shops (at Selling Price) + Debtors - Creditors<br>
         Net Stock Value = ${shopsValue.toLocaleString()} + ${debtorsValue.toLocaleString()} - ${creditorsValue.toLocaleString()}
     `;
 }
@@ -1654,6 +1692,7 @@ async function loadAllClientsView() {
                             const row = tbody.insertRow();
                             row.innerHTML = `
                                 <td>${sale.clientName}</td>
+                                <td>${sale.phoneNumber || 'Not Provided'}</td>
                                 <td>${product ? product.name : sale.feedType}</td>
                                 <td style="text-align: right;">${parseFloat(sale.bags).toFixed(1)}</td>
                                 <td style="text-align: right; font-weight: bold;">KSh ${amount.toLocaleString()}</td>
@@ -2745,7 +2784,7 @@ async function generateDoc1PDF(date) {
                 const sold = calculateSold(data, product.id);
                 const closingQty = closing[product.id] || 0;
                 const salesAmount = sold * product.sales;
-                const stockValue = closingQty * product.cost;
+                const stockValue = closingQty * product.sales; // CHANGED: Using SELLING PRICE
 
                 totalSalesAmount += salesAmount;
                 totalStockValue += stockValue;
@@ -3050,6 +3089,7 @@ async function generateDoc2PDF() {
 
                     debtorsData.push([
                         sale.debtorName,
+                        sale.phoneNumber || 'Not Provided',
                         product ? product.name : sale.feedType,
                         parseFloat(sale.bags).toFixed(1),
                         `KSh ${parseFloat(sale.price).toLocaleString()}`,
@@ -3063,10 +3103,11 @@ async function generateDoc2PDF() {
     }
 
     if (debtorsData.length === 0) {
-        debtorsData.push(['No debtors recorded', '', '', '', '', '', '']);
+        debtorsData.push(['No debtors recorded', '', '', '', '', '', '', '']);
     }
 
     debtorsData.push([
+        '',
         '',
         '',
         '',
@@ -3078,7 +3119,7 @@ async function generateDoc2PDF() {
 
     pdf.autoTable({
         startY: yPos,
-        head: [['Client', 'Feeds', 'Bags', 'Price', 'Amount', 'Shop', 'Date']],
+        head: [['Client', 'Phone', 'Feeds', 'Bags', 'Price', 'Amount', 'Shop', 'Date']],
         body: debtorsData,
         theme: 'grid',
         headStyles: { 
@@ -3087,15 +3128,16 @@ async function generateDoc2PDF() {
             fontStyle: 'bold',
             halign: 'center'
         },
-        styles: { fontSize: 9, cellPadding: 2 },
+        styles: { fontSize: 8, cellPadding: 2 },
         columnStyles: {
-            0: { cellWidth: 30 },
-            1: { cellWidth: 28 },
-            2: { halign: 'right', cellWidth: 18 },
-            3: { halign: 'right', cellWidth: 25 },
-            4: { halign: 'right', cellWidth: 25 },
-            5: { cellWidth: 25 },
-            6: { cellWidth: 25 }
+            0: { cellWidth: 25 },
+            1: { cellWidth: 23 },
+            2: { cellWidth: 25 },
+            3: { halign: 'right', cellWidth: 15 },
+            4: { halign: 'right', cellWidth: 20 },
+            5: { halign: 'right', cellWidth: 23 },
+            6: { cellWidth: 20 },
+            7: { cellWidth: 25 }
         },
         didParseCell: function(data) {
             if (data.row.index === debtorsData.length - 1) {
@@ -3136,6 +3178,7 @@ async function generateDoc2PDF() {
                         formatDateDisplay(date),
                         shop,
                         payment.clientName,
+                        payment.phoneNumber || 'Not Provided',
                         `KSh ${amount.toLocaleString()}`
                     ]);
                 });
@@ -3144,10 +3187,11 @@ async function generateDoc2PDF() {
     }
 
     if (creditorsData.length === 0) {
-        creditorsData.push(['-', 'No creditors recorded', '', '', '']);
+        creditorsData.push(['-', 'No creditors recorded', '', '', '', '']);
     }
 
     creditorsData.push([
+        '',
         '',
         '',
         '',
@@ -3157,7 +3201,7 @@ async function generateDoc2PDF() {
 
     pdf.autoTable({
         startY: yPos,
-        head: [['Index', 'Date', 'Shop', 'Client', 'Amount']],
+        head: [['Index', 'Date', 'Shop', 'Client', 'Phone', 'Amount']],
         body: creditorsData,
         theme: 'grid',
         headStyles: { 
@@ -3166,13 +3210,14 @@ async function generateDoc2PDF() {
             fontStyle: 'bold',
             halign: 'center'
         },
-        styles: { fontSize: 10, cellPadding: 3 },
+        styles: { fontSize: 9, cellPadding: 3 },
         columnStyles: {
-            0: { halign: 'center', cellWidth: 20 },
-            1: { halign: 'center', cellWidth: 35 },
-            2: { cellWidth: 35 },
-            3: { cellWidth: 45 },
-            4: { halign: 'right', cellWidth: 35 }
+            0: { halign: 'center', cellWidth: 15 },
+            1: { halign: 'center', cellWidth: 30 },
+            2: { cellWidth: 28 },
+            3: { cellWidth: 32 },
+            4: { cellWidth: 30 },
+            5: { halign: 'right', cellWidth: 30 }
         },
         didParseCell: function(data) {
             if (data.row.index === creditorsData.length - 1) {
@@ -3191,7 +3236,7 @@ async function generateDoc2PDF() {
     pdf.text('Stock Value Summary', 105, yPos, { align: 'center' });
     yPos += 20;
 
-    // Calculate shops stock value
+    // Calculate shops stock value at SELLING PRICE
     let shopsStockValue = 0;
 
     for (const shop of SHOPS) {
@@ -3204,7 +3249,7 @@ async function generateDoc2PDF() {
 
             productsData.forEach(product => {
                 const bags = closing[product.id] || 0;
-                shopsStockValue += bags * product.cost;
+                shopsStockValue += bags * product.sales; // CHANGED: Using SELLING PRICE
             });
         }
     }
@@ -3263,16 +3308,72 @@ async function generateDoc2PDF() {
         }
     });
 
-    const netValue = shopsStockValue + debtorsValue - totalCreditorsAmount;
-
     // Create value breakdown table
     pdf.setFontSize(12);
     pdf.setFont(undefined, 'bold');
     
+    // Calculate creditors balance properly (matching summary table)
+    const creditorBalancesDoc2 = {};
+
+    // Collect all prepayments
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.prepayments) {
+                Object.values(data.prepayments).forEach(payment => {
+                    if (!creditorBalancesDoc2[payment.clientName]) {
+                        creditorBalancesDoc2[payment.clientName] = { prepaid: 0, feedsTaken: 0 };
+                    }
+                    creditorBalancesDoc2[payment.clientName].prepaid += parseFloat(payment.amountPaid);
+                });
+            }
+        });
+    }
+
+    // Collect all creditor releases
+    for (const shop of SHOPS) {
+        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+        const snapshot = await getDocs(shopQuery);
+
+        snapshot.forEach(docSnapshot => {
+            const data = docSnapshot.data();
+            
+            if (data.creditorReleases) {
+                Object.values(data.creditorReleases).forEach(release => {
+                    const creditorName = release.creditorName;
+                    const bags = parseFloat(release.bags);
+                    const product = productsData.find(p => p.id === release.feedType);
+                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
+                    const discount = parseFloat(release.discount || 0);
+                    const amount = (bags * price) - discount;
+                    
+                    if (creditorBalancesDoc2[creditorName]) {
+                        creditorBalancesDoc2[creditorName].feedsTaken += amount;
+                    }
+                });
+            }
+        });
+    }
+
+    // Calculate total creditors balance
+    let creditorsBalanceDoc2 = 0;
+    Object.values(creditorBalancesDoc2).forEach(data => {
+        const balance = data.prepaid - data.feedsTaken;
+        if (balance !== 0) {
+            creditorsBalanceDoc2 += balance;
+        }
+    });
+
+    const netValue = shopsStockValue + debtorsValue - creditorsBalanceDoc2;
+
     const valueBreakdown = [
         ['Debtors Value:', `KSh ${debtorsValue.toLocaleString()}`],
-        ['Shops Stock Value:', `KSh ${shopsStockValue.toLocaleString()}`],
-        ['Creditors Value:', `KSh ${totalCreditorsAmount.toLocaleString()}`]
+        ['Shops Stock Value (Selling Price):', `KSh ${shopsStockValue.toLocaleString()}`],
+        ['Creditors Value:', `KSh ${creditorsBalanceDoc2.toLocaleString()}`]
     ];
 
     pdf.autoTable({
@@ -3295,11 +3396,11 @@ async function generateDoc2PDF() {
     // Draw calculation
     pdf.setFontSize(11);
     pdf.setFont(undefined, 'normal');
-    pdf.text('Net Stock Value = Stock in Shops + Debtors - Creditors', 105, afterTable, { align: 'center' });
+    pdf.text('Net Stock Value = Stock in Shops (at Selling Price) + Debtors - Creditors', 105, afterTable, { align: 'center' });
     
     pdf.setFontSize(10);
     pdf.text(
-        `Net Stock Value = ${shopsStockValue.toLocaleString()} + ${totalDebtorsAmount.toLocaleString()} - ${totalCreditorsAmount.toLocaleString()}`,
+        `Net Stock Value = ${shopsStockValue.toLocaleString()} + ${debtorsValue.toLocaleString()} - ${creditorsBalanceDoc2.toLocaleString()}`,
         105,
         afterTable + 7,
         { align: 'center' }
