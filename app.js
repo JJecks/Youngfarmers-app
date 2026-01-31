@@ -95,12 +95,49 @@ function showToast(message, type = 'success') {
     }, 3000);
 }
 
+function setupSidePanelButtons() {
+    const role = currentUserData?.role;
+
+    const receiptsBtn = document.getElementById('panel-receipts');
+    const invoicesBtn = document.getElementById('panel-invoices');
+    const deliveryBtn = document.getElementById('panel-delivery');
+
+    // Receipts: attendant + manager_full
+    if (!(role === 'attendant' || role === 'manager_full')) {
+        receiptsBtn.style.display = 'none';
+    }
+
+    // Invoices & Delivery: managers only
+    if (!(role === 'manager_full' || role === 'manager_view')) {
+        invoicesBtn.style.display = 'none';
+        deliveryBtn.style.display = 'none';
+    }
+}
+
+function setupNotificationsNavigation() {
+    const notificationsBtn = document.getElementById('panel-notifications');
+
+    if (notificationsBtn) {
+        notificationsBtn.addEventListener('click', () => {
+            showView('notifications-view');
+        });
+    }
+}
+
+
 function showView(viewId) {
     document.querySelectorAll('.view-container').forEach(view => {
         view.style.display = 'none';
     });
+
     const view = document.getElementById(viewId);
     if (view) view.style.display = 'block';
+
+    // Close side panel when switching views
+    const sidePanel = document.getElementById('side-panel');
+    if (sidePanel) {
+        sidePanel.classList.remove('open');
+    }
 }
 window.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
@@ -150,6 +187,8 @@ function showMainApp() {
                      `Attendant - ${currentUserData.shop}`;
     document.getElementById('user-role').textContent = roleText;
     loadDashboard();
+    setupSidePanelButtons();
+    setupNotificationsNavigation();
 }
 
 function setupAppListeners() {
@@ -165,6 +204,16 @@ function setupAppListeners() {
         loadDashboard();
     });
 }
+// Hamburger & side panel toggle
+const hamburgerBtn = document.getElementById('hamburger-btn');
+const sidePanel = document.getElementById('side-panel');
+
+if (hamburgerBtn && sidePanel) {
+    hamburgerBtn.addEventListener('click', () => {
+        sidePanel.classList.toggle('open');
+    });
+}
+
 function setupAuthListeners() {
     const signinTab = document.getElementById('signin-tab');
     const signupTab = document.getElementById('signup-tab');
