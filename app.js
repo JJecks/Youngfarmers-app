@@ -36,7 +36,7 @@ let currentUser = null;
 let currentUserData = null;
 let currentShop = null;
 let currentDate = formatDate(new Date());
-let productsData = [...PRODUCTS];
+let productsData = [];
 window.currentUserData = null;
 
 function formatDate(date) {
@@ -177,7 +177,8 @@ function showPendingScreen() {
     document.getElementById('pending-screen').style.display = 'flex';
 }
 
-function showMainApp() {
+async function showMainApp() {
+    await loadProductsFromFirestore();
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('pending-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -1729,26 +1730,47 @@ async function loadProductsView() {
         `;
     });
 
-    document.getElementById('save-prices').onclick = async () => {
-        const updates = {};
-        document.querySelectorAll('.product-cost').forEach(input => {
-            const id = input.dataset.id;
-            const product = productsData.find(p => p.id === id);
-            product.cost = parseFloat(input.value) || 0;
+document.getElementById('save-prices').onclick = async () => {
+    document.querySelectorAll('.product-cost').forEach(input => {
+        const p = productsData.find(x => x.id === input.dataset.id);
+        if (p) p.cost = Number(input.value) || 0;
+    });
+
+    document.querySelectorAll('.product-sales').forEach(input => {
+        const p = productsData.find(x => x.id === input.dataset.id);
+        if (p) p.sales = Number(input.value) || 0;
+    });
+
+    try {
+        await setDoc(
+            doc(db, 'settings', 'products'),
+            { products: productsData, updatedAt: serverTimestamp() },
+            { merge: true }
+        );
+
+        showToast('Prices saved permanently', 'success');
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+};
+
+}
+
+async function loadProductsFromFirestore() {
+    const ref = doc(db, 'settings', 'products');
+    const snap = await getDoc(ref);
+
+    if (snap.exists()) {
+        productsData = snap.data().products || [];
+    } else {
+        // First-time setup ONLY
+        productsData = DEFAULT_PRODUCTS;
+
+        await setDoc(ref, {
+            products: productsData,
+            createdAt: serverTimestamp()
         });
-        document.querySelectorAll('.product-sales').forEach(input => {
-            const id = input.dataset.id;
-            const product = productsData.find(p => p.id === id);
-            product.sales = parseFloat(input.value) || 0;
-        });
-        
-        try {
-            await setDoc(doc(db, 'settings', 'products'), { products: productsData });
-            showToast('Prices updated successfully!', 'success');
-        } catch (error) {
-            showToast('Error updating prices: ' + error.message, 'error');
-        }
-    };
+    }
 }
 
 async function loadAllClientsView() {
