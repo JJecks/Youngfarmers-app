@@ -453,10 +453,37 @@ async function loadShopData(shop, date) {
 
     if (shopDoc.exists()) {
         const data = shopDoc.data();
-        openingStock = data.openingStock || {};
-        openingStockSaved = !!data.openingStock;
+        
+        // ALWAYS recalculate opening stock from yesterday's closing stock
+        const yesterday = getPreviousDate(date);
+        const yesterdayDocRef = doc(db, 'shops', shop, 'daily', yesterday);
+        const yesterdayDoc = await getDoc(yesterdayDocRef);
+        
+        if (yesterdayDoc.exists()) {
+            // Use yesterday's closing stock as today's opening stock
+            openingStock = calculateClosingStock(yesterdayDoc.data());
+            
+            // Update today's opening stock in Firebase if it changed
+            const savedOpeningStock = data.openingStock || {};
+            const hasChanged = JSON.stringify(openingStock) !== JSON.stringify(savedOpeningStock);
+            
+            if (hasChanged) {
+                try {
+                    await setDoc(shopDocRef, { openingStock }, { merge: true });
+                    console.log('Opening stock updated from yesterday\'s closing stock');
+                } catch (error) {
+                    console.error('Error updating opening stock:', error);
+                }
+            }
+        } else {
+            // No yesterday data - use saved opening stock
+            openingStock = data.openingStock || {};
+        }
+        
+        openingStockSaved = true;
         renderClosingStockTable(shop, date, openingStock, shopDoc.data(), openingStockSaved, false);
-        if (openingStockSaved && currentUserData) {
+        
+        if (currentUserData) {
             document.getElementById('transaction-forms').style.display = 'block';
             document.getElementById('recorded-transactions').style.display = 'block';
             renderRecordedTransactions(shopDoc.data(), shop, date);
