@@ -1640,6 +1640,11 @@ async function loadCreditorsForRelease(shop) {
     const formContainer = document.getElementById('creditor-form-container');
     const loading = document.getElementById('creditor-loading');
 
+    if (!formContainer || !loading) {
+        console.error('Creditor form DOM not ready');
+        return;
+    }
+
     if (creditors.size === 0) {
         loading.textContent = 'No creditors available. Record prepayments first.';
         loading.style.color = '#856404';
@@ -1648,158 +1653,134 @@ async function loadCreditorsForRelease(shop) {
         loading.style.borderRadius = '5px';
         return;
     }
-    
+
     loading.style.display = 'none';
     formContainer.style.display = 'block';
-    
-    // Multi-feed form for creditor releases
+
     let feedItems = [{ id: 1, feedType: '', bags: '', price: 0 }];
     let feedIdCounter = 2;
-    
+
     const renderCreditorReleaseForm = () => {
         let subtotal = 0;
+
         feedItems.forEach(item => {
             if (item.feedType && item.bags) {
                 const product = productsData.find(p => p.id === item.feedType);
                 if (product) {
-                    item.price = product.sales * parseFloat(item.bags);
+                    item.price = product.sales * parseFloat(item.bags || 0);
                     subtotal += item.price;
                 }
             }
         });
-        
-        const discount = parseFloat(document.getElementById('form-discount')?.value || 0);
+
+        const discountInput = document.getElementById('form-discount');
+        const discount = discountInput ? parseFloat(discountInput.value || 0) : 0;
         const total = subtotal - discount;
-        
+
         formContainer.innerHTML = `
             <form id="transaction-form">
                 <div class="form-grid">
                     <select class="form-input" id="form-creditor" required>
                         <option value="">Select Creditor</option>
-                        ${Array.from(creditors).map(c => `<option value="${c}" ${document.getElementById('form-creditor')?.value === c ? 'selected' : ''}>${c}</option>`).join('')}
+                        ${Array.from(creditors).map(c => `<option value="${c}">${c}</option>`).join('')}
                     </select>
                 </div>
-                
+
                 <div style="margin: 20px 0;">
-                    <h5 style="color: #f57c00; margin-bottom: 10px;">Feed Items:</h5>
+                    <h5 style="color:#f57c00;">Feed Items</h5>
                     <div id="feed-items-container">
-                        ${feedItems.map((item, index) => `
-                            <div class="feed-item-row" data-item-id="${item.id}" style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px;">
-                                <select class="form-input feed-select" data-item-id="${item.id}" required>
-                                    <option value="">Select Feed Type</option>
-                                    ${productsData.map(p => `<option value="${p.id}" ${item.feedType === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                        ${feedItems.map(item => `
+                            <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px;margin-bottom:10px;">
+                                <select class="form-input feed-select" data-id="${item.id}">
+                                    <option value="">Select Feed</option>
+                                    ${productsData.map(p =>
+                                        `<option value="${p.id}" ${p.id === item.feedType ? 'selected' : ''}>${p.name}</option>`
+                                    ).join('')}
                                 </select>
-                                <input type="number" step="0.1" min="0.1" class="form-input bags-input" data-item-id="${item.id}" placeholder="Bags" value="${item.bags}" required>
-                                <input type="text" class="form-input" value="KSh ${item.price.toLocaleString()}" readonly style="background: #f5f5f5; font-weight: bold;">
-                                ${feedItems.length > 1 ? `<button type="button" class="btn-remove-feed" data-item-id="${item.id}" style="background: #d32f2f; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer;">✕</button>` : '<span></span>'}
+                                <input type="number" step="0.1" min="0.1" class="form-input bags-input" data-id="${item.id}" value="${item.bags}">
+                                <input class="form-input" value="KSh ${item.price.toLocaleString()}" readonly>
+                                ${feedItems.length > 1 ? `<button type="button" class="btn-remove" data-id="${item.id}">✕</button>` : ''}
                             </div>
                         `).join('')}
                     </div>
-                    <button type="button" id="add-feed-btn" style="background: #1976d2; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 10px;">+ Add Another Feed</button>
+                    <button type="button" id="add-feed-btn">+ Add Feed</button>
                 </div>
-                
-                <div style="background: #fff3e0; padding: 15px; border-radius: 5px; margin: 15px 0;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                        <span>Sub-total:</span>
-                        <strong>KSh ${subtotal.toLocaleString()}</strong>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; margin: 10px 0;">
-                        <span>Discount:</span>
-                        <input type="number" min="0" class="form-input" id="form-discount" placeholder="0" value="${discount}" style="text-align: right;">
-                    </div>
-                    <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #f57c00;">
-                        <span style="font-size: 1.2em; font-weight: bold;">TOTAL:</span>
-                        <strong style="font-size: 1.3em; color: #f57c00;">KSh ${total.toLocaleString()}</strong>
-                    </div>
+
+                <div style="background:#fff3e0;padding:10px;">
+                    <div>Subtotal: <strong>KSh ${subtotal.toLocaleString()}</strong></div>
+                    <input type="number" id="form-discount" class="form-input" placeholder="Discount" value="${discount}">
+                    <div style="font-weight:bold;">TOTAL: KSh ${total.toLocaleString()}</div>
                 </div>
-                
+
                 <div class="form-buttons">
-                    <button type="submit" class="btn-save" style="background: #f57c00;">Save Release</button>
+                    <button type="submit" class="btn-save" style="background:#f57c00;">Save Release</button>
                     <button type="button" class="btn-cancel">Cancel</button>
                 </div>
             </form>
         `;
-        
-        // Event listeners
-        document.querySelectorAll('.feed-select').forEach(select => {
-            select.onchange = (e) => {
-                const itemId = parseInt(e.target.dataset.itemId);
-                const item = feedItems.find(i => i.id === itemId);
-                if (item) {
-                    item.feedType = e.target.value;
-                    renderCreditorReleaseForm();
-                }
-            };
-        });
-        
-        document.querySelectorAll('.bags-input').forEach(input => {
-            input.oninput = (e) => {
-                const itemId = parseInt(e.target.dataset.itemId);
-                const item = feedItems.find(i => i.id === itemId);
-                if (item) {
-                    item.bags = e.target.value;
-                    renderCreditorReleaseForm();
-                }
-            };
-        });
-        
-        document.querySelectorAll('.btn-remove-feed').forEach(btn => {
-            btn.onclick = (e) => {
-                const itemId = parseInt(e.target.dataset.itemId);
-                feedItems = feedItems.filter(i => i.id !== itemId);
+
+        document.querySelectorAll('.feed-select').forEach(sel => {
+            sel.onchange = e => {
+                const item = feedItems.find(i => i.id == e.target.dataset.id);
+                if (item) item.feedType = e.target.value;
                 renderCreditorReleaseForm();
             };
         });
-        
+
+        document.querySelectorAll('.bags-input').forEach(inp => {
+            inp.oninput = e => {
+                const item = feedItems.find(i => i.id == e.target.dataset.id);
+                if (item) item.bags = e.target.value;
+                renderCreditorReleaseForm();
+            };
+        });
+
+        document.querySelectorAll('.btn-remove').forEach(btn => {
+            btn.onclick = e => {
+                feedItems = feedItems.filter(i => i.id != e.target.dataset.id);
+                renderCreditorReleaseForm();
+            };
+        });
+
         document.getElementById('add-feed-btn').onclick = () => {
             feedItems.push({ id: feedIdCounter++, feedType: '', bags: '', price: 0 });
             renderCreditorReleaseForm();
         };
-        
-        document.getElementById('form-discount').oninput = () => {
-            renderCreditorReleaseForm();
-        };
-        
-        document.getElementById('transaction-form').onsubmit = async (e) => {
+
+        document.getElementById('transaction-form').onsubmit = async e => {
             e.preventDefault();
-            
             const creditorName = document.getElementById('form-creditor').value;
-            const discount = parseFloat(document.getElementById('form-discount').value || 0);
-            
-            // Build items array
-            const items = feedItems.map(item => {
-                const product = productsData.find(p => p.id === item.feedType);
+
+            const items = feedItems.map(i => {
+                const product = productsData.find(p => p.id === i.feedType);
                 return {
-                    feedType: item.feedType,
-                    feedName: product ? product.name : item.feedType,
-                    bags: parseFloat(item.bags),
-                    pricePerBag: product ? product.sales : 0,
-                    totalPrice: item.price
+                    feedType: i.feedType,
+                    feedName: product?.name,
+                    bags: parseFloat(i.bags),
+                    pricePerBag: product?.sales,
+                    totalPrice: i.price
                 };
             });
-            
-            const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
-            const total = subtotal - discount;
-            
-await saveTransaction(shop, currentDate, 'creditorReleases', {
-    creditorName,
-    items,
-    subtotal,
-    discount,
-    total
-});
 
-// Check if creditor balance goes negative (becomes debtor)
-await checkCreditorToDebtorTransfer(creditorName, total);
-        
-        document.querySelectorAll('.btn-cancel').forEach(btn => {
-            btn.onclick = () => document.getElementById('form-container').innerHTML = '';
-        });
+            await saveTransaction(shop, currentDate, 'creditorReleases', {
+                creditorName,
+                items,
+                subtotal,
+                discount,
+                total
+            });
+
+            document.getElementById('form-container').innerHTML = '';
+        };
+
+        document.querySelector('.btn-cancel').onclick = () => {
+            document.getElementById('form-container').innerHTML = '';
+        };
     };
-    
+
     renderCreditorReleaseForm();
-    };
 }
+
 
 async function loadDebtorsForPayment(shop) {
     const debtors = new Set();
