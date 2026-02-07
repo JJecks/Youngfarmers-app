@@ -2651,15 +2651,22 @@ function setupClientTabs() {
         tab.addEventListener('click', async () => {
             // Remove active class from all tabs
             tabs.forEach(t => t.classList.remove('active'));
-            tabContents.forEach(tc => tc.classList.remove('active'));
             
             // Add active class to clicked tab
             tab.classList.add('active');
             
             const tabName = tab.dataset.tab;
+            
+            // Show/hide tab contents
+            tabContents.forEach(tc => {
+                tc.classList.remove('active');
+                tc.style.display = 'none'; // Explicitly hide
+            });
+            
             const content = document.getElementById(`${tabName}-tab`);
             if (content) {
                 content.classList.add('active');
+                content.style.display = 'block'; // Explicitly show
             }
             
             // Load data for the selected tab
