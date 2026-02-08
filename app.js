@@ -1697,19 +1697,28 @@ async function loadCreditorsForRelease(shop) {
                                         `<option value="${p.id}" ${p.id === item.feedType ? 'selected' : ''}>${p.name}</option>`
                                     ).join('')}
                                 </select>
-                                <input type="number" step="0.1" min="0.1" class="form-input bags-input" data-id="${item.id}" value="${item.bags}">
+                                <input type="number" step="0.1" min="0.1" class="form-input bags-input" data-id="${item.id}" value="${item.bags}" placeholder="Bags">
                                 <input class="form-input" value="KSh ${item.price.toLocaleString()}" readonly>
                                 ${feedItems.length > 1 ? `<button type="button" class="btn-remove" data-id="${item.id}">✕</button>` : ''}
                             </div>
                         `).join('')}
                     </div>
-                    <button type="button" id="add-feed-btn">+ Add Feed</button>
+                    <button type="button" id="add-feed-btn" style="background: #1976d2; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; margin-top: 10px;">+ Add Feed</button>
                 </div>
 
-                <div style="background:#fff3e0;padding:10px;">
-                    <div>Subtotal: <strong>KSh ${subtotal.toLocaleString()}</strong></div>
-                    <input type="number" id="form-discount" class="form-input" placeholder="Discount" value="${discount}">
-                    <div style="font-weight:bold;">TOTAL: KSh ${total.toLocaleString()}</div>
+                <div style="background:#fff3e0;padding:15px;border-radius:5px;margin:15px 0;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span>Subtotal:</span>
+                        <strong>KSh ${subtotal.toLocaleString()}</strong>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0;">
+                        <label>Discount (KSh):</label>
+                        <input type="number" min="0" id="form-discount" class="form-input" placeholder="0" value="${discount}">
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #f57c00;">
+                        <span style="font-weight:bold; font-size: 1.1em;">TOTAL:</span>
+                        <strong style="font-size: 1.2em; color: #f57c00;">KSh ${total.toLocaleString()}</strong>
+                    </div>
                 </div>
 
                 <div class="form-buttons">
@@ -1719,6 +1728,7 @@ async function loadCreditorsForRelease(shop) {
             </form>
         `;
 
+        // Event listeners for dynamic form
         document.querySelectorAll('.feed-select').forEach(sel => {
             sel.onchange = e => {
                 const item = feedItems.find(i => i.id == e.target.dataset.id);
@@ -1747,21 +1757,32 @@ async function loadCreditorsForRelease(shop) {
             renderCreditorReleaseForm();
         };
 
+        // ✅ ENHANCED: Form submission with proper transfer logic and view refresh
         document.getElementById('transaction-form').onsubmit = async e => {
             e.preventDefault();
+            
             const creditorName = document.getElementById('form-creditor').value;
 
-            const items = feedItems.map(i => {
+            // Validate that at least one feed item is properly filled
+            const validItems = feedItems.filter(item => item.feedType && item.bags && parseFloat(item.bags) > 0);
+            
+            if (validItems.length === 0) {
+                showToast('Please add at least one feed item with quantity', 'error');
+                return;
+            }
+
+            const items = validItems.map(i => {
                 const product = productsData.find(p => p.id === i.feedType);
                 return {
                     feedType: i.feedType,
-                    feedName: product?.name,
+                    feedName: product?.name || i.feedType,
                     bags: parseFloat(i.bags),
-                    pricePerBag: product?.sales,
+                    pricePerBag: product?.sales || 0,
                     totalPrice: i.price
                 };
             });
 
+            // Save the transaction
             await saveTransaction(shop, currentDate, 'creditorReleases', {
                 creditorName,
                 items,
@@ -1770,12 +1791,32 @@ async function loadCreditorsForRelease(shop) {
                 total
             });
 
+            // ✅ NEW: Check if creditor overspent and needs transfer to debtors
+            await checkCreditorToDebtorTransfer(creditorName, total);
+            
+            // ✅ NEW: Auto-refresh creditors view if it's currently open
+            const creditorsView = document.getElementById('creditors-view');
+            if (creditorsView && creditorsView.style.display !== 'none') {
+                await loadCreditorsView();
+                showToast(`Feeds released to ${creditorName}. Creditors view refreshed.`, 'success');
+            }
+            
+            // Close the form
             document.getElementById('form-container').innerHTML = '';
         };
 
+        // Cancel button
         document.querySelector('.btn-cancel').onclick = () => {
             document.getElementById('form-container').innerHTML = '';
         };
+        
+        // ✅ NEW: Discount input listener
+        const discountField = document.getElementById('form-discount');
+        if (discountField) {
+            discountField.oninput = () => {
+                renderCreditorReleaseForm();
+            };
+        }
     };
 
     renderCreditorReleaseForm();
@@ -1841,7 +1882,9 @@ form.onsubmit = async (e) => {
 // Check if creditor overspent and needs to transfer to debtors
 async function checkCreditorToDebtorTransfer(creditorName, releaseAmount) {
     try {
-        // Calculate total prepaid by this creditor
+        console.log(`🔍 Checking if ${creditorName} overspent with release of KSh ${releaseAmount.toLocaleString()}`);
+        
+        // Step 1: Calculate total prepaid by this creditor across all shops
         let totalPrepaid = 0;
         for (const shop of SHOPS) {
             const shopQuery = query(collection(db, 'shops', shop, 'daily'));
@@ -1859,7 +1902,7 @@ async function checkCreditorToDebtorTransfer(creditorName, releaseAmount) {
             });
         }
         
-        // Calculate total feeds taken by this creditor
+        // Step 2: Calculate total feeds taken by this creditor across all shops
         let totalFeedsTaken = 0;
         for (const shop of SHOPS) {
             const shopQuery = query(collection(db, 'shops', shop, 'daily'));
@@ -1879,40 +1922,41 @@ async function checkCreditorToDebtorTransfer(creditorName, releaseAmount) {
         
         const balance = totalPrepaid - totalFeedsTaken;
         
-        // If balance is negative, creditor has overspent and becomes debtor
+        console.log(`💰 ${creditorName} balance: Prepaid KSh ${totalPrepaid.toLocaleString()} - Feeds KSh ${totalFeedsTaken.toLocaleString()} = KSh ${balance.toLocaleString()}`);
+        
+        // Step 3: If balance is negative, creditor has overspent and becomes debtor
         if (balance < 0) {
             const debt = Math.abs(balance);
-            showToast(`${creditorName} has overspent by KSh ${debt.toLocaleString()}. Transferred to Debtors page.`, 'success');
+            showToast(`⚠️ ${creditorName} has overspent by KSh ${debt.toLocaleString()}. Transferred to Debtors page.`, 'success');
+            
+            // Auto-refresh views if they're open
+            const debtorsView = document.getElementById('debtors-view');
+            const creditorsView = document.getElementById('creditors-view');
+
+            if (debtorsView && debtorsView.style.display !== 'none') {
+                await loadDebtorsView();
+            }
+
+            if (creditorsView && creditorsView.style.display !== 'none') {
+                await loadCreditorsView();
+            }
+        } else {
+            console.log(`✅ ${creditorName} still has a positive balance of KSh ${balance.toLocaleString()}`);
         }
         
     } catch (error) {
-        console.error('Error checking creditor to debtor transfer:', error);
+        console.error('❌ Error checking creditor to debtor transfer:', error);
+        showToast('Error checking creditor balance: ' + error.message, 'error');
     }
-if (balance < 0) {
-    const debt = Math.abs(balance);
-    showToast(`${creditorName} has overspent by KSh ${debt.toLocaleString()}. Transferred to Debtors page.`, 'success');
-    
-    // Auto-refresh the current view if user is on Debtors or Creditors page
-    const debtorsView = document.getElementById('debtors-view');
-    const creditorsView = document.getElementById('creditors-view');
-
-    if (debtorsView && debtorsView.style.display !== 'none') {
-        // Refresh debtors view
-        await loadDebtorsView();
-    }
-
-    if (creditorsView && creditorsView.style.display !== 'none') {
-        // Refresh creditors view  
-        await loadCreditorsView();
-    }
-}
 }
 
 // Check if debtor overpaid and needs to transfer to creditors
 
 async function checkDebtorToCreditorTransfer(debtorName, paymentAmount, shop, date) {
     try {
-        // Calculate total debt
+        console.log(`🔍 Checking if ${debtorName} overpaid with payment of KSh ${paymentAmount.toLocaleString()}`);
+        
+        // Step 1: Calculate total debt
         let totalOwed = 0;
         for (const shopName of SHOPS) {
             const shopQuery = query(collection(db, 'shops', shopName, 'daily'));
@@ -1923,7 +1967,15 @@ async function checkDebtorToCreditorTransfer(debtorName, paymentAmount, shop, da
                 if (data.creditSales) {
                     Object.values(data.creditSales).forEach(sale => {
                         if (sale.debtorName === debtorName) {
-                            const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                            // Handle both old single-item and new multi-item credit sales
+                            let amount = 0;
+                            if (sale.items && Array.isArray(sale.items)) {
+                                // New format: multi-item credit sales
+                                amount = parseFloat(sale.total || 0);
+                            } else {
+                                // Old format: single-item credit sales
+                                amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+                            }
                             totalOwed += amount;
                         }
                     });
@@ -1931,7 +1983,7 @@ async function checkDebtorToCreditorTransfer(debtorName, paymentAmount, shop, da
             });
         }
         
-        // Calculate total paid
+        // Step 2: Calculate total paid
         let totalPaid = 0;
         for (const shopName of SHOPS) {
             const shopQuery = query(collection(db, 'shops', shopName, 'daily'));
@@ -1951,67 +2003,69 @@ async function checkDebtorToCreditorTransfer(debtorName, paymentAmount, shop, da
         
         const balance = totalPaid - totalOwed;
         
-        // If balance is positive, debtor has overpaid and becomes creditor
+        console.log(`💰 ${debtorName} balance: Paid KSh ${totalPaid.toLocaleString()} - Owed KSh ${totalOwed.toLocaleString()} = KSh ${balance.toLocaleString()}`);
+        
+        // Step 3: If balance is positive, debtor has overpaid and becomes creditor
         if (balance > 0) {
             const overpayment = balance;
             
-// Record the overpayment as a prepayment (which counts as a sale)
-const shopDocRef = doc(db, 'shops', shop, 'daily', date);
-const shopDoc = await getDoc(shopDocRef);
-const transactionId = Date.now().toString();
+            // Record the overpayment as a prepayment (which counts as a sale)
+            const shopDocRef = doc(db, 'shops', shop, 'daily', date);
+            const shopDoc = await getDoc(shopDocRef);
+            const transactionId = Date.now().toString();
 
-if (shopDoc.exists()) {
-    const existingData = shopDoc.data();
-    const existingPrepayments = existingData.prepayments || {};
-    
-    await updateDoc(shopDocRef, {
-        prepayments: {
-            ...existingPrepayments,
-            [transactionId]: {
-                clientName: debtorName,
-                phoneNumber: 'From Debt Overpayment',
-                amountPaid: overpayment,
-                timestamp: new Date().toISOString(),
-                note: 'Auto-generated from debt overpayment'
+            if (shopDoc.exists()) {
+                const existingData = shopDoc.data();
+                const existingPrepayments = existingData.prepayments || {};
+                
+                await updateDoc(shopDocRef, {
+                    prepayments: {
+                        ...existingPrepayments,
+                        [transactionId]: {
+                            clientName: debtorName,
+                            phoneNumber: 'From Debt Overpayment',
+                            amountPaid: overpayment,
+                            timestamp: new Date().toISOString(),
+                            note: 'Auto-generated from debt overpayment'
+                        }
+                    }
+                });
+            } else {
+                // Create new document if it doesn't exist
+                await setDoc(shopDocRef, {
+                    prepayments: {
+                        [transactionId]: {
+                            clientName: debtorName,
+                            phoneNumber: 'From Debt Overpayment',
+                            amountPaid: overpayment,
+                            timestamp: new Date().toISOString(),
+                            note: 'Auto-generated from debt overpayment'
+                        }
+                    }
+                });
             }
-        }
-    });
-} else {
-    // Create new document if it doesn't exist
-    await setDoc(shopDocRef, {
-        prepayments: {
-            [transactionId]: {
-                clientName: debtorName,
-                phoneNumber: 'From Debt Overpayment',
-                amountPaid: overpayment,
-                timestamp: new Date().toISOString(),
-                note: 'Auto-generated from debt overpayment'
-            }
-        }
-    });
-}
             
-            showToast(`${debtorName} overpaid by KSh ${overpayment.toLocaleString()}. Transferred to Creditors page and recorded as prepayment sale.`, 'success');
+            showToast(`✅ ${debtorName} overpaid by KSh ${overpayment.toLocaleString()}. Transferred to Creditors page and recorded as prepayment sale.`, 'success');
+            
+            // Auto-refresh views if they're open
+            const currentView = document.getElementById('debtors-view');
+            const creditorsView = document.getElementById('creditors-view');
+
+            if (currentView && currentView.style.display !== 'none') {
+                await loadDebtorsView();
+            }
+
+            if (creditorsView && creditorsView.style.display !== 'none') {
+                await loadCreditorsView();
+            }
+        } else {
+            console.log(`✅ ${debtorName} still owes KSh ${Math.abs(balance).toLocaleString()}`);
         }
         
     } catch (error) {
-        console.error('Error checking debtor to creditor transfer:', error);
+        console.error('❌ Error checking debtor to creditor transfer:', error);
+        showToast('Error checking debtor balance: ' + error.message, 'error');
     }
-showToast(`${debtorName} overpaid by KSh ${overpayment.toLocaleString()}. Transferred to Creditors page and recorded as prepayment sale.`, 'success');
-
-// Auto-refresh the current view if user is on Debtors or Creditors page
-const currentView = document.getElementById('debtors-view');
-const creditorsView = document.getElementById('creditors-view');
-
-if (currentView && currentView.style.display !== 'none') {
-    // Refresh debtors view
-    await loadDebtorsView();
-}
-
-if (creditorsView && creditorsView.style.display !== 'none') {
-    // Refresh creditors view  
-    await loadCreditorsView();
-}
 }
 
 // Make functions globally available
@@ -2314,9 +2368,9 @@ async function loadCreditorsView() {
     summaryTbody.innerHTML = '';
     summaryTfoot.innerHTML = '';
 
-    const creditorBalances = {}; // Track: { name: { prepaid, feedsTaken, balance } }
+    const creditorBalances = {}; // Track: { name: { prepaid, feedsAmount, balance } }
 
-    // Collect all prepayments
+    // Step 1: Collect all prepayments
     for (const shop of SHOPS) {
         const shopQuery = query(collection(db, 'shops', shop, 'daily'));
         const snapshot = await getDocs(shopQuery);
@@ -2330,7 +2384,11 @@ async function loadCreditorsView() {
 
                     // Track creditor balance
                     if (!creditorBalances[payment.clientName]) {
-                        creditorBalances[payment.clientName] = { prepaid: 0, feedsTaken: 0, feedsAmount: 0, phoneNumber: payment.phoneNumber || 'Not Provided' };
+                        creditorBalances[payment.clientName] = { 
+                            prepaid: 0, 
+                            feedsAmount: 0, 
+                            phoneNumber: payment.phoneNumber || 'Not Provided' 
+                        };
                     }
                     creditorBalances[payment.clientName].prepaid += amount;
                 });
@@ -2338,7 +2396,8 @@ async function loadCreditorsView() {
         });
     }
 
-    // Collect all creditor releases (feeds taken)
+    // Step 2: Collect all creditor releases (feeds taken)
+    // ✅ FIXED: Now correctly accessing the total field instead of non-existent bags/feedType
     for (const shop of SHOPS) {
         const shopQuery = query(collection(db, 'shops', shop, 'daily'));
         const snapshot = await getDocs(shopQuery);
@@ -2349,30 +2408,36 @@ async function loadCreditorsView() {
             if (data.creditorReleases) {
                 Object.values(data.creditorReleases).forEach(release => {
                     const creditorName = release.creditorName;
-                    const bags = parseFloat(release.bags);
-                    const product = productsData.find(p => p.id === release.feedType);
-                    const amount = product ? bags * product.sales : 0;
+                    const amount = parseFloat(release.total || 0); // ✅ Use total, not bags * price
                     
-                    if (creditorBalances[creditorName]) {
-                        creditorBalances[creditorName].feedsTaken += bags;
-                        creditorBalances[creditorName].feedsAmount += amount;
+                    // Initialize creditor if they released feeds but haven't prepaid yet
+                    // (This shouldn't happen normally, but handles edge cases)
+                    if (!creditorBalances[creditorName]) {
+                        creditorBalances[creditorName] = { 
+                            prepaid: 0, 
+                            feedsAmount: 0, 
+                            phoneNumber: 'Not Provided' 
+                        };
                     }
+                    
+                    creditorBalances[creditorName].feedsAmount += amount;
                 });
             }
         });
     }
 
-    // Render summary table
-    let totalFeedsTaken = 0;
+    // Step 3: Render summary table
+    let totalPrepaid = 0;
     let totalFeedsAmount = 0;
     let totalBalance = 0;
 
+    // ✅ FIXED: Now using correct variable names
     Object.entries(creditorBalances).forEach(([name, data]) => {
         const balance = data.prepaid - data.feedsAmount;
         
         // Only show if there's a balance (positive or negative)
         if (balance !== 0) {
-            totalFeedsTaken += data.feedsTaken;
+            totalPrepaid += data.prepaid;
             totalFeedsAmount += data.feedsAmount;
             totalBalance += balance;
 
@@ -2380,25 +2445,27 @@ async function loadCreditorsView() {
             row.innerHTML = `
                 <td style="font-weight: bold;">${name}</td>
                 <td>${data.phoneNumber || 'Not Provided'}</td>
-                <td style="text-align: right;">${data.feedsTaken.toFixed(1)} bags</td>
+                <td style="text-align: right;">KSh ${data.prepaid.toLocaleString()}</td>
                 <td style="text-align: right;">KSh ${data.feedsAmount.toLocaleString()}</td>
                 <td style="text-align: right; font-weight: bold; color: ${balance > 0 ? '#2e7d32' : '#d32f2f'};">KSh ${balance.toLocaleString()}</td>
             `;
         }
     });
 
-    // Summary footer
+    // Step 4: Summary footer
+    // ✅ FIXED: Now using correctly defined variables
     const summaryFooterRow = summaryTfoot.insertRow();
     summaryFooterRow.innerHTML = `
-        <td></td>
         <td colspan="2" style="font-weight: bold;">TOTAL</td>
-        <td style="text-align: right; font-weight: bold;">KSh ${totalOwed.toLocaleString()}</td>
-        <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPaid.toLocaleString()}</td>
-        <td style="text-align: right; font-weight: bold; color: #d32f2f; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #2e7d32;">KSh ${totalPrepaid.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: #f57c00;">KSh ${totalFeedsAmount.toLocaleString()}</td>
+        <td style="text-align: right; font-weight: bold; color: ${totalBalance > 0 ? '#2e7d32' : '#d32f2f'}; font-size: 1.1em;">KSh ${totalBalance.toLocaleString()}</td>
     `;
 
     // Store total creditor balance globally for Stock Value calculation
     window.totalCreditorsBalance = totalBalance;
+    
+    console.log('✅ Creditors view loaded successfully:', { totalPrepaid, totalFeedsAmount, totalBalance });
 }
 async function loadStockValueView() {
     showView('stock-value-view');
