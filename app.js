@@ -1560,7 +1560,7 @@ function showTransactionForm(formId, shop) {
                 <h4 style="color: #388e3c;">Prepayments Made</h4>
                 <form id="transaction-form" class="form-grid">
                     <input type="text" class="form-input" id="form-client" placeholder="Client Name" required>
-                    <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'">
+                    <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'">
                     <input type="number" min="0" class="form-input" id="form-amount" placeholder="Amount Paid (KSh)" required>
                     <div class="form-buttons">
                         <button type="submit" class="btn-save" style="background: #388e3c;">Save</button>
@@ -5596,17 +5596,17 @@ async function generateDoc1PDF(date) {
                 fontSize: 8,
                 cellPadding: 2
             },
-            columnStyles: {
-                0: { cellWidth: 10, halign: 'center' },
-                1: { cellWidth: 28 },
-                2: { cellWidth: 18, halign: 'right' },
-                3: { cellWidth: 18, halign: 'right' },
-                4: { cellWidth: 22, halign: 'right' },
-                5: { cellWidth: 22, halign: 'right' },
-                6: { cellWidth: 18, halign: 'right' },
-                7: { cellWidth: 28, halign: 'right' },
-                8: { cellWidth: 28, halign: 'right' }
-            },
+columnStyles: {
+    0: { cellWidth: 8, halign: 'center' },      // # (reduced: 10→8)
+    1: { cellWidth: 25 },                        // Product (reduced: 28→25)
+    2: { cellWidth: 16, halign: 'right' },      // Opening (reduced: 18→16)
+    3: { cellWidth: 16, halign: 'right' },      // Closing (reduced: 18→16)
+    4: { cellWidth: 20, halign: 'right' },      // Cost Price (reduced: 22→20)
+    5: { cellWidth: 20, halign: 'right' },      // Sales Price (reduced: 22→20)
+    6: { cellWidth: 16, halign: 'right' },      // Sales Qty (reduced: 18→16)
+    7: { cellWidth: 26, halign: 'right' },      // Sales Amount (reduced: 28→26)
+    8: { cellWidth: 26, halign: 'right' }       // Stock Value (reduced: 28→26)
+},
             didParseCell: function(data) {
                 if (data.row.index === tableData.length - 1) {
                     data.cell.styles.fontStyle = 'bold';
