@@ -5521,7 +5521,7 @@ async function generateDoc1PDF(date) {
                 const restocking = calculateRestocking(data, product.id);
                 const sold = calculateSold(data, product.id);
                 const closingQty = closing[product.id] || 0;
-                const salesAmount = sold * product.sales;
+                let salesAmount = sold * product.sales;
                 const stockValue = closingQty * product.sales; // CHANGED: Using SELLING PRICE
 
                 totalSalesAmount += salesAmount;
