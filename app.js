@@ -2574,32 +2574,26 @@ async function loadStockValueData(date) {
         });
     }
 
-    // Collect all creditor releases (feeds taken at SELLING PRICE)
-    for (const shop of SHOPS) {
-        const shopQuery = query(collection(db, 'shops', shop, 'daily'));
-        const snapshot = await getDocs(shopQuery);
+// Collect all creditor releases (feeds taken at SELLING PRICE)
+for (const shop of SHOPS) {
+    const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+    const snapshot = await getDocs(shopQuery);
 
-        snapshot.forEach(docSnapshot => {
-            const data = docSnapshot.data();
-            
-            if (data.creditorReleases) {
-                Object.values(data.creditorReleases).forEach(release => {
-                    const creditorName = release.creditorName;
-                    const bags = parseFloat(release.bags);
-                    const product = productsData.find(p => p.id === release.feedType);
-                    
-                    // Use price from transaction if available, otherwise use product selling price
-                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                    const discount = parseFloat(release.discount || 0);
-                    const amount = (bags * price) - discount; // SELLING PRICE with discount
-                    
-                    if (creditorBalances[creditorName]) {
-                        creditorBalances[creditorName].feedsTaken += amount;
-                    }
-                });
-            }
-        });
-    }
+    snapshot.forEach(docSnapshot => {
+        const data = docSnapshot.data();
+        
+        if (data.creditorReleases) {
+            Object.values(data.creditorReleases).forEach(release => {
+                const creditorName = release.creditorName;
+                const amount = parseFloat(release.total || 0);  // ✅ FIXED: Use total directly!
+                
+                if (creditorBalances[creditorName]) {
+                    creditorBalances[creditorName].feedsTaken += amount;
+                }
+            });
+        }
+    });
+}
 
     // Calculate total creditors balance
     Object.values(creditorBalances).forEach(data => {
