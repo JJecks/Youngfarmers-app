@@ -6036,21 +6036,16 @@ pdf.autoTable({
         snapshot.forEach(docSnapshot => {
             const data = docSnapshot.data();
             
-            if (data.creditorReleases) {
-                Object.values(data.creditorReleases).forEach(release => {
-                    const creditorName = release.creditorName;
-                    const bags = parseFloat(release.bags);
-                    const product = productsData.find(p => p.id === release.feedType);
-                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                    const discount = parseFloat(release.discount || 0);
-                    const amount = (bags * price) - discount;
-                    
-                    if (creditorBalancesPDF[creditorName]) {
-                        creditorBalancesPDF[creditorName].feedsTaken += bags;
-                        creditorBalancesPDF[creditorName].feedsAmount += amount;
-                    }
-                });
-            }
+if (data.creditorReleases) {
+    Object.values(data.creditorReleases).forEach(release => {
+        const creditorName = release.creditorName;
+        const amount = parseFloat(release.total || 0);  // ✅ Use total!
+        
+        if (creditorBalances[creditorName]) {
+            creditorBalances[creditorName].feedsAmount += amount;
+        }
+    });
+}
         });
     }
 
@@ -6232,20 +6227,16 @@ pdf.autoTable({
         snapshot.forEach(docSnapshot => {
             const data = docSnapshot.data();
             
-            if (data.creditorReleases) {
-                Object.values(data.creditorReleases).forEach(release => {
-                    const creditorName = release.creditorName;
-                    const bags = parseFloat(release.bags);
-                    const product = productsData.find(p => p.id === release.feedType);
-                    const price = release.price ? parseFloat(release.price) : (product ? product.sales : 0);
-                    const discount = parseFloat(release.discount || 0);
-                    const amount = (bags * price) - discount;
-                    
-                    if (creditorBalancesDoc2[creditorName]) {
-                        creditorBalancesDoc2[creditorName].feedsTaken += amount;
-                    }
-                });
-            }
+if (data.creditorReleases) {
+    Object.values(data.creditorReleases).forEach(release => {
+        const creditorName = release.creditorName;
+        const amount = parseFloat(release.total || 0);  // ✅ Use total!
+        
+        if (creditorBalancesDoc2[creditorName]) {
+            creditorBalancesDoc2[creditorName].feedsTaken += amount;
+        }
+    });
+}
         });
     }
 
