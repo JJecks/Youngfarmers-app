@@ -2205,6 +2205,8 @@ if (data.creditSales) {
         }
     });
 }
+        });
+    }
 
     // Collect all debt payments
     for (const shop of SHOPS) {
