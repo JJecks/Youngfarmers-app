@@ -2175,11 +2175,6 @@ async function loadDebtorsView() {
         snapshot.forEach(docSnapshot => {
             const data = docSnapshot.data();
             
-            if (data.creditSales) {
-                Object.values(data.creditSales).forEach(sale => {
-                    const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
-
-                    // Track debtor balance
 if (data.creditSales) {
     Object.values(data.creditSales).forEach(sale => {
         // ✅ FIXED: Handle both OLD and NEW credit sale formats
@@ -2210,8 +2205,6 @@ if (data.creditSales) {
         }
     });
 }
-        });
-    }
 
     // Collect all debt payments
     for (const shop of SHOPS) {
