@@ -1199,7 +1199,7 @@ function showTransactionForm(formId, shop) {
                     <form id="transaction-form">
                         <div class="form-grid">
                             <input type="text" class="form-input" id="form-client" placeholder="Client Name" required value="${document.getElementById('form-client')?.value || ''}">
-                            <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'" value="${document.getElementById('form-phone')?.value || ''}">
+                            <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'" value="${document.getElementById('form-phone')?.value || ''}">
                         </div>
                         
                         <div style="margin: 20px 0;">
@@ -1432,7 +1432,7 @@ function showTransactionForm(formId, shop) {
                     <form id="transaction-form">
                         <div class="form-grid">
                             <input type="text" class="form-input" id="form-debtor" placeholder="Debtor Name" required value="${document.getElementById('form-debtor')?.value || ''}">
-                            <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'" value="${document.getElementById('form-phone')?.value || ''}">
+                            <input type="text" class="form-input" id="form-phone" placeholder="Phone Number (+254...)" pattern="^(\\+254|0)[0-9]{9}$|^Not Provided$" title="Enter format: +254712345678 or 0712345678 or 'Not Provided'" value="${document.getElementById('form-phone')?.value || ''}">
                         </div>
                         
                         <div style="margin: 20px 0;">
@@ -2180,22 +2180,36 @@ async function loadDebtorsView() {
                     const amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
 
                     // Track debtor balance
-                    if (!debtorBalances[sale.debtorName]) {
-                        debtorBalances[sale.debtorName] = { 
-                            owed: 0, 
-                            paid: 0, 
-                            phoneNumber: sale.phoneNumber || 'Not Provided',
-                            parentClient: sale.parentClient || null
-                        };
-                    }
-                    debtorBalances[sale.debtorName].owed += amount;
-                    
-                    // Update parent info if it exists
-                    if (sale.parentClient) {
-                        debtorBalances[sale.debtorName].parentClient = sale.parentClient;
-                    }
-                });
-            }
+if (data.creditSales) {
+    Object.values(data.creditSales).forEach(sale => {
+        // ✅ FIXED: Handle both OLD and NEW credit sale formats
+        let amount = 0;
+        
+        if (sale.items && Array.isArray(sale.items)) {
+            // NEW format: Multi-item credit sales
+            amount = parseFloat(sale.total || 0);
+        } else {
+            // OLD format: Single-item credit sales (for backward compatibility)
+            amount = (parseFloat(sale.bags) * parseFloat(sale.price)) - parseFloat(sale.discount || 0);
+        }
+
+        // Track debtor balance
+        if (!debtorBalances[sale.debtorName]) {
+            debtorBalances[sale.debtorName] = { 
+                owed: 0, 
+                paid: 0, 
+                phoneNumber: sale.phoneNumber || 'Not Provided',
+                parentClient: sale.parentClient || null
+            };
+        }
+        debtorBalances[sale.debtorName].owed += amount;
+        
+        // Update parent info if it exists
+        if (sale.parentClient) {
+            debtorBalances[sale.debtorName].parentClient = sale.parentClient;
+        }
+    });
+}
         });
     }
 
@@ -2219,6 +2233,75 @@ async function loadDebtorsView() {
             }
         });
     }
+
+// ✅ NEW: Check for creditors who overspent and should appear as debtors
+const creditorBalances = {};
+
+// Collect all prepayments
+for (const shop of SHOPS) {
+    const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+    const snapshot = await getDocs(shopQuery);
+
+    snapshot.forEach(docSnapshot => {
+        const data = docSnapshot.data();
+        
+        if (data.prepayments) {
+            Object.values(data.prepayments).forEach(payment => {
+                if (!creditorBalances[payment.clientName]) {
+                    creditorBalances[payment.clientName] = { 
+                        prepaid: 0, 
+                        feedsAmount: 0,
+                        phoneNumber: payment.phoneNumber || 'Not Provided'
+                    };
+                }
+                creditorBalances[payment.clientName].prepaid += parseFloat(payment.amountPaid);
+            });
+        }
+    });
+}
+
+// Collect all creditor releases
+for (const shop of SHOPS) {
+    const shopQuery = query(collection(db, 'shops', shop, 'daily'));
+    const snapshot = await getDocs(shopQuery);
+
+    snapshot.forEach(docSnapshot => {
+        const data = docSnapshot.data();
+        
+        if (data.creditorReleases) {
+            Object.values(data.creditorReleases).forEach(release => {
+                const creditorName = release.creditorName;
+                const amount = parseFloat(release.total || 0);
+                
+                if (creditorBalances[creditorName]) {
+                    creditorBalances[creditorName].feedsAmount += amount;
+                }
+            });
+        }
+    });
+}
+
+// Add overspent creditors to debtorBalances
+Object.entries(creditorBalances).forEach(([name, data]) => {
+    const balance = data.prepaid - data.feedsAmount;
+    
+    // If creditor has negative balance (overspent), add to debtors
+    if (balance < 0) {
+        const debt = Math.abs(balance);
+        
+        if (!debtorBalances[name]) {
+            debtorBalances[name] = {
+                owed: 0,
+                paid: 0,
+                phoneNumber: data.phoneNumber,
+                parentClient: null
+            };
+        }
+        
+        // Add the overspent amount as debt
+        debtorBalances[name].owed += debt;
+    }
+});
 
     // Render summary table
     let totalOwed = 0;
@@ -6041,8 +6124,8 @@ if (data.creditorReleases) {
         const creditorName = release.creditorName;
         const amount = parseFloat(release.total || 0);  // ✅ Use total!
         
-        if (creditorBalances[creditorName]) {
-            creditorBalances[creditorName].feedsAmount += amount;
+        if (creditorBalancesPDF[creditorName]) {
+            creditorBalancesPDF[creditorName].feedsAmount += amount;
         }
     });
 }
